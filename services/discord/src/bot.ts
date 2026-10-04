@@ -182,8 +182,9 @@ export class PenpotDiscordBot {
         `${settings.discord.systemPrompt}\n\n` +
         `Kontext: komunikuješ přes Discord s uživatelem ${message.member?.displayName ?? message.author.username}. ` +
         `Odpověď piš jako Discord zprávu (Markdown, max. pár odstavců). ` +
-        `Pro náhled výsledku použij nástroj export_shape – exportované obrázky se automaticky přiloží ke zprávě. ` +
-        `Přiložené obrázky od uživatele můžeš vložit do návrhu nástrojem import_image s jejich URL.` +
+        `Pro náhled výsledku použij nástroj export_shape – exportované obrázky se automaticky přiloží ke zprávě ` +
+        `(hotovou grafiku exportuj se scale: 2, ať je ostrá; download nepotřebuješ). ` +
+        `Přiložené obrázky od uživatele vlož do návrhu nástrojem import_image s jejich URL – request_image_upload na Discordu nepoužívej.` +
         (imageUrls.length ? `\nURL přiložených obrázků: ${imageUrls.join(" ")}` : "") +
         (settings.ai.extraInstructions ? `\n\n${settings.ai.extraInstructions}` : "");
       const result = await provider.run({
