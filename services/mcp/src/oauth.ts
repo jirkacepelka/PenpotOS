@@ -89,6 +89,25 @@ ${error ? `<div class="err">${esc(error)}</div>` : ""}
 </form></div></body></html>`;
 }
 
+/**
+ * CSP for the login page. Browsers apply form-action also to the redirect that follows the
+ * form submission, so the client's callback origin (e.g. https://claude.ai) must be allowed –
+ * with 'self' alone Chrome silently drops the redirect and "nothing happens".
+ */
+export function loginCsp(redirectUri?: string): string {
+  let callback = "";
+  try {
+    if (redirectUri) {
+      const u = new URL(redirectUri);
+      if (u.protocol === "https:" || u.protocol === "http:") callback = ` ${u.origin}`;
+      else callback = ` ${u.protocol}`; // custom schemes of desktop apps, e.g. "cursor:"
+    }
+  } catch {
+    /* invalid redirect URIs are rejected by the SDK before this point */
+  }
+  return `default-src 'none'; style-src 'unsafe-inline'; form-action 'self'${callback}; frame-ancestors 'none'`;
+}
+
 export class PenpotOAuthProvider implements OAuthServerProvider {
   readonly clientsStore = new ClientsStore();
 
@@ -103,7 +122,7 @@ export class PenpotOAuthProvider implements OAuthServerProvider {
       resource: params.resource?.href,
       exp: Date.now() + 15 * 60 * 1000,
     });
-    res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'");
+    res.setHeader("Content-Security-Policy", loginCsp(params.redirectUri));
     res.status(200).type("html").send(loginPage(pending, client.client_name));
   }
 
@@ -122,6 +141,7 @@ export class PenpotOAuthProvider implements OAuthServerProvider {
       this.failures.set(ip, cur);
     };
     const pending = verifyPending(req.body?.pending);
+    res.setHeader("Content-Security-Policy", loginCsp(pending?.redirectUri));
     if (!pending) return res.status(400).type("html").send(loginPage("", undefined, "Platnost přihlašovacího formuláře vypršela. Začni připojení znovu."));
     const email = String(req.body?.email ?? "").trim().toLowerCase();
     let profileId: string;

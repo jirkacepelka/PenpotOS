@@ -19,8 +19,9 @@ const publicBase = () => new URL(env.publicUrl);
 const resourceMetadataUrl = () => new URL("/.well-known/oauth-protected-resource/mcp", publicBase()).href;
 
 /** OAuth endpoints and metadata, rebuilt whenever the public address changes. */
+// Built outside request handlers (express-rate-limit inside the SDK router rejects being created per request).
 let authRouter: { url: string; router: express.RequestHandler } | undefined;
-function currentAuthRouter(): express.RequestHandler {
+function refreshAuthRouter() {
   const url = env.publicUrl;
   if (authRouter?.url !== url) {
     const base = new URL(url);
@@ -36,8 +37,10 @@ function currentAuthRouter(): express.RequestHandler {
     };
     log.info(`OAuth issuer: ${base.origin}`);
   }
-  return authRouter.router;
 }
+refreshAuthRouter();
+setInterval(refreshAuthRouter, 5_000).unref();
+const currentAuthRouter = () => authRouter!.router;
 
 declare global {
   namespace Express {

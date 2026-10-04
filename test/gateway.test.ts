@@ -63,3 +63,12 @@ describe("setup wizard tokens", async () => {
     expect(isValidSetupToken("not-issued")).toBe(false);
   });
 });
+
+describe("oauth login page CSP", async () => {
+  const { loginCsp } = await import("../services/mcp/src/oauth.ts");
+  it("allows the redirect back to the client after the form post", () => {
+    expect(loginCsp("https://claude.ai/api/mcp/auth_callback")).toContain("form-action 'self' https://claude.ai;");
+    expect(loginCsp("http://localhost:33418/callback")).toContain("form-action 'self' http://localhost:33418;");
+    expect(loginCsp(undefined)).toContain("form-action 'self';");
+  });
+});
