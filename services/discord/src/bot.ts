@@ -110,14 +110,24 @@ export class PenpotDiscordBot {
     const inTaskChannel = d.channelIds.includes(message.channelId);
     const inTaskThread = isThread && !!channel.parentId && d.channelIds.includes(channel.parentId);
     const mentioned = message.mentions.users.has(botId);
+    const repliedToBot =
+      !!message.reference?.messageId &&
+      (message.mentions.repliedUser?.id === botId || (await message.fetchReference().catch(() => null))?.author.id === botId);
     const existing = isThread ? await loadConversation(channel.id) : undefined;
 
-    if (!(inTaskChannel || (inTaskThread && (existing || mentioned)) || (existing && isThread) || (d.respondToMentions && mentioned))) return;
+    if (d.mentionOnly) {
+      // Ordinary conversation in the channel is ignored – only direct requests cost AI credits.
+      if (!(mentioned || repliedToBot)) return;
+      if (!(inTaskChannel || inTaskThread || existing || d.respondToMentions)) return;
+    } else if (!(inTaskChannel || (inTaskThread && (existing || mentioned)) || (existing && isThread) || (d.respondToMentions && mentioned))) {
+      return;
+    }
 
     if (d.allowedRoleIds.length) {
       const member = message.member ?? (await message.guild.members.fetch(message.author.id).catch(() => null));
       if (!member?.roles.cache.some((r) => d.allowedRoleIds.includes(r.id))) {
-        if (inTaskChannel || mentioned) await message.reply("Nemáš oprávnění zadávat úkoly AI (chybí role).").catch(() => {});
+        // Checked before any AI call, so this costs no credits.
+        if (inTaskChannel || mentioned || repliedToBot) await message.reply("Nemáš oprávnění zadávat úkoly AI (chybí role).").catch(() => {});
         return;
       }
     }
@@ -184,7 +194,8 @@ export class PenpotDiscordBot {
         `Odpověď piš jako Discord zprávu (Markdown, max. pár odstavců). ` +
         `Pro náhled výsledku použij nástroj export_shape – exportované obrázky se automaticky přiloží ke zprávě ` +
         `(hotovou grafiku exportuj se scale: 2, ať je ostrá; download nepotřebuješ). ` +
-        `Přiložené obrázky od uživatele vlož do návrhu nástrojem import_image s jejich URL – request_image_upload na Discordu nepoužívej.` +
+        `Přiložené obrázky od uživatele vlož do návrhu nástrojem import_image s jejich URL – request_image_upload na Discordu nepoužívej. ` +
+        `Pokud zpráva jen o něčem diskutuje nebo se ptá, odpověz (případně navrhni grafiku) a nic nevytvářej, dokud o to uživatel nepožádá.` +
         (imageUrls.length ? `\nURL přiložených obrázků: ${imageUrls.join(" ")}` : "") +
         (settings.ai.extraInstructions ? `\n\n${settings.ai.extraInstructions}` : "");
       const result = await provider.run({

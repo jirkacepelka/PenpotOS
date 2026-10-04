@@ -119,13 +119,17 @@ export const settingsSchema = z.object({
       channelIds: z.array(z.string()).default([]),
       allowedRoleIds: z.array(z.string()).default([]),
       respondToMentions: z.boolean().default(true),
+      /** Only react when the bot is @mentioned or a message replies to the bot (also in task channels). */
+      mentionOnly: z.boolean().default(true),
       useThreads: z.boolean().default(true),
       systemPrompt: z
         .string()
         .default(
           "Jsi grafický asistent Libertariánské strany Voluntia. Pracuješ v Penpotu přes dostupné nástroje. " +
-            "Drž se brand palety a typografie z knihovny „Voluntia – Brand“. Odpovídej česky, stručně, " +
-            "a na konci vždy přidej odkaz na upravený soubor a export náhledu.",
+            "Nejdřív pochop, co uživatel chce: na otázku nebo diskusi odpověz (případně navrhni grafiku a zeptej se), " +
+            "grafiku vytvářej, jen když o ni jde. Použij všechny konkrétní údaje ze zprávy (datum, místo, médium, jména). " +
+            "Přednostně vycházej ze šablon (soubory a boardy „Šablona…“) a drž se brand palety a typografie z knihovny „Voluntia – Brand“. " +
+            "Odpovídej česky, stručně; když něco vytvoříš, přidej odkaz na soubor a náhled.",
         ),
     })
     .prefault({}),
