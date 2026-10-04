@@ -55,3 +55,11 @@ describe("public address helpers", async () => {
     expect(() => normalizePublicUrl("https://x.cz/penpot")).toThrow();
   });
 });
+
+describe("setup wizard tokens", async () => {
+  const { isValidSetupToken } = await import("../services/core/src/admin/setup.ts");
+  it("rejects unknown or empty tokens", () => {
+    expect(isValidSetupToken("")).toBe(false);
+    expect(isValidSetupToken("not-issued")).toBe(false);
+  });
+});
