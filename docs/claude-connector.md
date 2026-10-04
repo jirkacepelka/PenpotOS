@@ -57,3 +57,9 @@ Všechny nástroje pracující s návrhem berou `fileId` (a volitelně `pageId`)
 * AI upravuje návrhy pod servisním účtem „Voluntia AI“; v audit logu adminu je u každého volání vidět, který člen ho spustil.
 * Admin může AI úplně vypnout, přepnout do **režimu jen pro čtení** (změny se zahodí a neuloží), omezit na vybrané týmy, nebo odebrat AI přístup jednotlivým členům (tím se zruší i jejich připojení).
 * Připojení (OAuth i API tokeny) lze zrušit v *AI & MCP → Aktivní MCP přístupy*.
+
+## Fotky a hotové grafiky
+
+* **Fotka do grafiky:** pošli Claudovi fotku a napiš, co s ní má udělat. Claude ale nedokáže předat přílohu z chatu nástroji, takže ti pošle odkaz na nahrávací stránku PenpotOS. Tam fotku nahraješ (na mobilu ji jde rovnou vyfotit, na počítači i vložit přes Ctrl+V) a Claude ji automaticky převezme. Odkaz platí 2 hodiny a stačí na víc fotek najednou.
+* **Hotová grafika zpátky:** Claude grafiku vyexportuje a pošle odkaz ke stažení (PNG v dvojnásobném rozlišení, platí 7 dní). Výsledek zároveň zůstane jako soubor v Penpotu, kde ho můžeš dál upravit.
+* **Discord bot:** přílohy ze zprávy použije přímo, nic se nenahrává zvlášť. Výsledek pošle jako přílohu do vlákna.
