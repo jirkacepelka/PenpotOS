@@ -1,5 +1,5 @@
 import { Router, type Request } from "express";
-import { audit, env, queryOne, randomToken, safeEqual, writeConfigFile } from "@penpotos/shared";
+import { audit, env, queryOne, randomToken, writeConfigFile } from "@penpotos/shared";
 import { createMember } from "../members.ts";
 import { runSync } from "../sync.ts";
 import { html, layout } from "./html.ts";
@@ -46,7 +46,26 @@ export function suggestedPublicUrl(req: Request): string {
   return `${proto}://${hostname}:${env.str("PENPOTOS_GATEWAY_PUBLIC_PORT", "9001")}`;
 }
 
-const SETUP_COOKIE = "ppos_setup";
+/**
+ * One-time form tokens kept in memory (not in a cookie): several open tabs, an automatic
+ * refresh or a browser that drops cookies must not make the wizard fail.
+ */
+const setupTokens = new Map<string, number>();
+const TOKEN_TTL_MS = 2 * 60 * 60 * 1000;
+
+function issueSetupToken(): string {
+  const now = Date.now();
+  for (const [t, exp] of setupTokens) if (exp < now) setupTokens.delete(t);
+  if (setupTokens.size > 1000) setupTokens.clear();
+  const token = randomToken(18);
+  setupTokens.set(token, now + TOKEN_TTL_MS);
+  return token;
+}
+
+export function isValidSetupToken(token: string): boolean {
+  const exp = token ? setupTokens.get(token) : undefined;
+  return !!exp && exp > Date.now();
+}
 
 const page = (token: string, values: Record<string, string>, error?: string) =>
   layout(
@@ -83,18 +102,17 @@ setupRouter.use(async (req, res, next) => {
 
 setupRouter.get("/setup", async (req, res) => {
   if (await hasAdmin()) return res.redirect("/");
-  const token = randomToken(18);
-  res.cookie(SETUP_COOKIE, token, { httpOnly: true, sameSite: "strict", maxAge: 60 * 60 * 1000, path: "/" });
-  res.send(page(token, { publicUrl: suggestedPublicUrl(req) }));
+  res.send(page(issueSetupToken(), { publicUrl: suggestedPublicUrl(req) }));
 });
 
 setupRouter.post("/setup", async (req, res) => {
   if (await hasAdmin()) return res.redirect("/");
   const b = req.body ?? {};
-  const token = String(req.cookies?.[SETUP_COOKIE] ?? "");
+  const token = String(b._setup ?? "");
   const values = { fullname: String(b.fullname ?? ""), email: String(b.email ?? ""), publicUrl: String(b.publicUrl ?? "") };
-  const fail = (msg: string) => res.status(400).send(page(token, values, msg));
-  if (!token || !safeEqual(token, String(b._setup ?? ""))) return fail("Formulář vypršel, zkus to prosím znovu.");
+  // Every error page carries a fresh token, so the next attempt always works.
+  const fail = (msg: string) => res.status(400).send(page(issueSetupToken(), values, msg));
+  if (!isValidSetupToken(token)) return fail("Formulář vypršel (např. po restartu aplikace) – zkontroluj údaje a odešli ho prosím znovu.");
   if (String(b.password ?? "") !== String(b.password2 ?? "")) return fail("Hesla se neshodují.");
   try {
     if (!env.publicUrlFromEnv) normalizePublicUrl(values.publicUrl);
@@ -104,9 +122,9 @@ setupRouter.post("/setup", async (req, res) => {
     );
     const changed = env.publicUrlFromEnv ? false : savePublicUrl(values.publicUrl);
     adminExists = true;
+    setupTokens.clear();
     await audit({ source: "admin", actor: values.email, action: "setup.complete", detail: { publicUrl: env.publicUrl } });
     runSync("setup").catch(() => {});
-    res.clearCookie(SETUP_COOKIE, { path: "/" });
     startSession(req, res, profileId);
     setFlash(
       res,
