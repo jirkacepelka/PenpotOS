@@ -55,7 +55,7 @@ docker compose --profile tunnel up -d      # + Cloudflare Tunnel
 
 Podrobné návody:
 
-* [Instalace na ZimaOS + Cloudflare Tunnel](docs/instalace-zimaos.md)
+* [Instalace na ZimaOS + Cloudflare Tunnel](docs/instalace-zimaos.md) – pro import v rozhraní ZimaOS je připravený [`zimaos/docker-compose.yml`](zimaos/docker-compose.yml)
 * [Připojení AI v Claude chatu (MCP connector)](docs/claude-connector.md)
 * [Discord bot](docs/discord-bot.md)
 * [Architektura, bezpečnost, údržba](docs/architektura.md)

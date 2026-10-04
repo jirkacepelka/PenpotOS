@@ -9,6 +9,10 @@ const log = createLogger("core");
 async function bootstrap() {
   if (!env.secretKey || env.secretKey.length < 16) throw new Error("PENPOTOS_SECRET_KEY must be set (at least 16 characters)");
   if (!env.internalToken) throw new Error("PENPOTOS_INTERNAL_TOKEN must be set");
+  // Placeholders from zimaos/docker-compose.yml must be replaced before the first start.
+  for (const [name, value] of Object.entries({ PENPOTOS_SECRET_KEY: env.secretKey, PENPOTOS_INTERNAL_TOKEN: env.internalToken, PENPOTOS_ADMIN_PASSWORD: env.bootstrapAdminPassword })) {
+    if (value.startsWith("ZMEN-")) throw new Error(`${name} still contains the placeholder value – set your own secret`);
+  }
   await waitForDatabase();
   await migrate();
   // Penpot profiles that existed before PenpotOS become managed members.

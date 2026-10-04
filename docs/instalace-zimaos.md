@@ -1,5 +1,7 @@
 # Instalace na ZimaOS
 
+Dvě možnosti: **A)** přes terminál s `.env` (kroky 1–3, nejsnazší aktualizace přes `git pull`), nebo **B)** import jednoho YAML souboru v rozhraní ZimaOS (viz [Varianta B](#varianta-b-import-přes-rozhraní-zimaos-bez-terminálu)).
+
 Návod předpokládá ZimaOS (nebo CasaOS / jakýkoli Linux s Dockerem) a přístup přes SSH nebo webový terminál.
 Doporučené minimum: 4 GB RAM (Penpot backend + exportér + headless Chromium pro MCP), 2 CPU.
 
@@ -36,7 +38,7 @@ Pak uprav ručně:
 
 `PENPOTOS_SECRET_KEY` šifruje uložené API klíče (Anthropic, Discord). Když ho změníš, je potřeba klíče v adminu zadat znovu.
 
-## 3. Spuštění
+## 3. Spuštění (varianta A: terminál)
 
 ```bash
 docker compose pull            # stáhne image (Penpot + ghcr.io/jirkacepelka/penpotos-*)
@@ -51,9 +53,18 @@ První start trvá 1–3 minuty (Penpot inicializuje databázi). Pak:
 
 > Pokud image `ghcr.io/jirkacepelka/penpotos-*` nejsou veřejné, buď je v GitHubu (Packages → Package settings) přepni na *Public*, nebo je sestav lokálně: `docker compose build`.
 
-### Uživatelské rozhraní ZimaOS
+### Varianta B: import přes rozhraní ZimaOS (bez terminálu)
 
-ZimaOS umí importovat compose soubor přes **App Store → ⊕ → Install a customized app → Import**. `docker-compose.yml` obsahuje i metadata `x-casaos`, takže se PenpotOS zobrazí na ploše s ikonou. Proměnné z `.env` ale UI neumí – nejjednodušší je spustit stack přes terminál (krok 3) a ZimaOS ho pak v přehledu aplikací zobrazí.
+Pro import je připravený samostatný soubor [`zimaos/docker-compose.yml`](../zimaos/docker-compose.yml) – nepotřebuje `.env`, všechna nastavení jsou na začátku souboru v bloku `x-nastaveni`.
+
+1. Stáhni [`zimaos/docker-compose.yml`](https://raw.githubusercontent.com/jirkacepelka/PenpotOS/main/zimaos/docker-compose.yml) a otevři ho v textovém editoru.
+2. V bloku `x-nastaveni` nahraď **všechny hodnoty začínající `ZMEN-`** vlastními náhodnými řetězci (min. 32 znaků, jen písmena, číslice a pomlčky – např. z [random.org/strings](https://www.random.org/strings/)), nastav `public_url` (doména z Cloudflare Tunnelu, nebo zatím `http://<ip-zimaos>:9001`) a `admin_email` / `admin_password`. Nic jiného neměň.
+3. V ZimaOS otevři **App Store → ⊕ (vpravo nahoře) → Install a customized app → Import** a vlož obsah souboru (nebo ho nahraj).
+4. Potvrď instalaci. První start trvá 1–3 minuty, pak se PenpotOS objeví na ploše (otevírá Penpot na portu 9001; admin je na portu 9002).
+
+Když hodnotu `ZMEN-…` zapomeneš změnit, admin služba se odmítne spustit a v jejím logu uvidíš, kterou proměnnou máš doplnit.
+
+> Image `ghcr.io/jirkacepelka/penpotos-*` musí být veřejné (GitHub → profil → Packages → balíček → Package settings → Change visibility → Public), jinak je ZimaOS nestáhne.
 
 ## 4. Přístup z internetu – Cloudflare Tunnel
 

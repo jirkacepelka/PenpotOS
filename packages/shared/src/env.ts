@@ -33,7 +33,11 @@ export const env = {
     return int("PENPOT_PREPL_PORT", 6063);
   },
   get databaseUrl() {
-    return str("PENPOTOS_DATABASE_URL", "postgresql://penpot:penpot@penpot-postgres:5432/penpot");
+    const url = process.env.PENPOTOS_DATABASE_URL;
+    if (url) return url;
+    // Alternative to a full URL (handy when the password is shared via a YAML anchor).
+    const password = encodeURIComponent(str("PENPOTOS_DATABASE_PASSWORD", "penpot"));
+    return `postgresql://penpot:${password}@${str("PENPOTOS_DATABASE_HOST", "penpot-postgres")}:5432/penpot`;
   },
   /** Secret used to encrypt API keys stored in the database and to sign admin sessions. */
   get secretKey() {
