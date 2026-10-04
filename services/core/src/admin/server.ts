@@ -9,6 +9,7 @@ import { onboardingRouter } from "./pages-onboarding.ts";
 import { teamsRouter } from "./pages-teams.ts";
 import { usersRouter } from "./pages-users.ts";
 import { requireAdmin } from "./session.ts";
+import { bootstrapState, renderStatusPage } from "../bootstrap-state.ts";
 
 const log = createLogger("admin");
 const STATIC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../static");
@@ -26,7 +27,14 @@ export function createAdminApp() {
   app.use("/static", express.static(STATIC_DIR, { maxAge: "1h" }));
   app.use(express.urlencoded({ extended: true, limit: "1mb" }));
   app.use(cookieParser());
-  app.get("/healthz", (_req, res) => res.json({ ok: true }));
+  app.get("/healthz", (_req, res) => res.json({ ok: true, status: bootstrapState().status }));
+  // Until PenpotOS has started (database, PREPL, accounts) every page shows the startup diagnostics.
+  app.use((_req, res, next) => {
+    if (bootstrapState().status === "ready") return next();
+    res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'");
+    res.setHeader("Cache-Control", "no-store");
+    res.status(503).type("html").send(renderStatusPage());
+  });
   app.use(publicRouter);
   app.use(requireAdmin);
   app.use(miscRouter, usersRouter, teamsRouter, onboardingRouter, aiRouter);

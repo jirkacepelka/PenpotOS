@@ -2,6 +2,7 @@ import http from "node:http";
 import type { Duplex } from "node:stream";
 import { createProxyServer } from "http-proxy-3";
 import { INTERNAL_HEADER, audit, createLogger, env, getSettings } from "@penpotos/shared";
+import { bootstrapState, renderStatusPage } from "./bootstrap-state.ts";
 
 const log = createLogger("gateway");
 
@@ -49,8 +50,9 @@ export function startGateway(port: number) {
   proxy.on("error", (err: Error, _req: any, res: any) => {
     log.warn(`proxy error: ${err.message}`);
     if (res && "writeHead" in res && !res.headersSent) {
-      res.writeHead(502, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end("PenpotOS: služba je dočasně nedostupná, zkus to za chvíli.");
+      // Penpot itself is not reachable yet – explain what is going on instead of a bare 502.
+      res.writeHead(502, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+      res.end(renderStatusPage());
     } else if (res && "destroy" in res) {
       res.destroy();
     }
@@ -60,9 +62,18 @@ export function startGateway(port: number) {
     const url = req.url ?? "/";
     stripInternalHeaders(req.headers);
     try {
+      const startup = bootstrapState();
       if (url === "/penpotos-health") {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true }));
+        const ok = startup.status === "ready";
+        res.writeHead(ok ? 200 : 503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok, status: startup.status, problem: startup.problem?.title }));
+        return;
+      }
+      // While PenpotOS cannot start (e.g. misconfiguration) show why on the main page and /penpotos-status.
+      const isPage = req.method === "GET" && (url === "/" || url.startsWith("/?") || url.startsWith("/index.html"));
+      if (url.startsWith("/penpotos-status") || (isPage && startup.status === "error")) {
+        res.writeHead(startup.status === "ready" ? 200 : 503, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+        res.end(renderStatusPage());
         return;
       }
       const reason = await isBlocked(url);

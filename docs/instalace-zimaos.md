@@ -114,8 +114,13 @@ docker compose exec penpot-postgres pg_dump -U penpot penpot | gzip > penpot-$(d
 
 ## Řešení problémů
 
+Když PenpotOS nemůže nastartovat, ukáže porty 9001 i 9002 stránku **„PenpotOS se nespustil“** s důvodem a návodem (obnovuje se sama). Stav je i na `http://<server>:9001/penpotos-status`.
+
 | Problém | Řešení |
 |---|---|
+| Stránka „V nastavení zůstala ukázková hodnota ZMEN-…“ | V nastavení aplikace (nebo YAML) nahraď všechny hodnoty `ZMEN-…` a aplikaci restartuj. |
+| Stránka „Heslo databáze nesedí s existující databází“ | Databáze vznikla dřív s jiným heslem (PostgreSQL ho přebírá jen při prvním startu). Vrať původní `postgres_password`, nebo aplikaci odinstaluj, smaž volume (`docker volume rm penpotos_penpot_postgres_v15`) a nainstaluj znovu – smažou se tím i data Penpotu. |
+| Prohlížeč hlásí `ERR_CONNECTION_REFUSED` na portu 9001 | Kontejner `penpotos-core` neběží nebo ZimaOS přemapoval port: zkontroluj stav a porty aplikace v ZimaOS (`docker ps -a --filter name=penpot`), log `docker logs --tail 50 penpotos-core`. Verze před 4. 10. 2026 se při chybě konfigurace ukončovaly – aktualizuj image. |
 | `penpot-frontend` se pořád restartuje, v logu `Address family not supported by protocol` | Server nemá IPv6 → do `.env` přidej `PENPOT_IPV6_LISTEN_DIRECTIVE=#`. |
 | Admin hlásí „PREPL nedostupný“ | Backend ještě startuje, nebo chybí flag `enable-prepl-server` (je v `docker-compose.yml`). |
 | Penpot v prohlížeči hlásí chybu sítě | Otevíráš Penpot jinou adresou než `PENPOTOS_PUBLIC_URL`. |

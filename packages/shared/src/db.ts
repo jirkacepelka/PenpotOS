@@ -132,8 +132,9 @@ export async function waitForDatabase(timeoutMs = 180_000): Promise<void> {
     try {
       await query("SELECT 1 FROM profile LIMIT 1");
       return;
-    } catch (err) {
-      if (Date.now() - start > timeoutMs) throw err;
+    } catch (err: any) {
+      // A wrong password will not fix itself – report it right away.
+      if (err?.code === "28P01" || Date.now() - start > timeoutMs) throw err;
       log.info("waiting for Penpot database…");
       await new Promise((r) => setTimeout(r, 3000));
     }
