@@ -9,9 +9,17 @@ x-env: &env
 
 volumes: { config: {}, db: {}, assets: {}, discord: {} }
 
+# Vlastní síť je nutná: bez ní ZimaOS dá kontejnery do výchozí sítě "bridge",
+# kde se navzájem nenajdou podle jména (ENOTFOUND penpot-postgres).
+networks:
+  penpot:
+    name: penpotos
+
 services:
   penpotos-core:
     image: ghcr.io/jirkacepelka/penpotos-core:latest
+    container_name: penpotos-core
+    networks: [penpot]
     restart: unless-stopped
     ports: ["9001:8080", "9002:8081"]
     volumes: [config:/config]
@@ -19,6 +27,8 @@ services:
 
   penpotos-mcp:
     image: ghcr.io/jirkacepelka/penpotos-mcp:latest
+    container_name: penpotos-mcp
+    networks: [penpot]
     restart: unless-stopped
     init: true
     shm_size: 1gb
@@ -27,12 +37,16 @@ services:
 
   penpotos-discord:
     image: ghcr.io/jirkacepelka/penpotos-discord:latest
+    container_name: penpotos-discord
+    networks: [penpot]
     restart: unless-stopped
     volumes: [config:/config:ro, discord:/data]
     environment: *env
 
   penpot-frontend:
     image: penpotapp/frontend:2.18
+    container_name: penpot-frontend
+    networks: [penpot]
     restart: unless-stopped
     volumes: [assets:/opt/data/assets]
     depends_on: [penpot-backend, penpot-exporter]
@@ -44,6 +58,8 @@ services:
 
   penpot-backend:
     image: penpotapp/backend:2.18
+    container_name: penpot-backend
+    networks: [penpot]
     restart: unless-stopped
     command: ["/bin/bash", "-c", "until [ -s /config/run-backend.sh ]; do sleep 2; done; exec bash /config/run-backend.sh"]
     volumes: [assets:/opt/data/assets, config:/config:ro]
@@ -61,6 +77,8 @@ services:
 
   penpot-exporter:
     image: penpotapp/exporter:2.18
+    container_name: penpot-exporter
+    networks: [penpot]
     restart: unless-stopped
     command: ["/bin/bash", "-c", "until [ -s /config/run-exporter.sh ]; do sleep 2; done; exec bash /config/run-exporter.sh"]
     volumes: [config:/config:ro]
@@ -71,6 +89,8 @@ services:
 
   penpot-postgres:
     image: postgres:15
+    container_name: penpot-postgres
+    networks: [penpot]
     restart: unless-stopped
     stop_signal: SIGINT
     command: ["bash", "-c", "until [ -s /config/postgres_password ]; do sleep 2; done; exec docker-entrypoint.sh postgres"]
@@ -83,6 +103,8 @@ services:
 
   penpot-valkey:
     image: valkey/valkey:8.1
+    container_name: penpot-valkey
+    networks: [penpot]
     restart: unless-stopped
 
 x-casaos:

@@ -73,6 +73,7 @@ Když PenpotOS nemůže nastartovat, ukáže porty 9001 i 9002 stránku **„Pen
 | Problém | Řešení |
 |---|---|
 | Stránka „Heslo databáze nesedí s existující databází“ | Databázový volume pochází ze starší instalace. Aplikaci odinstaluj, smaž její volumy (`docker volume ls \| grep penpotos`) a nainstaluj znovu. Smažou se tím i data Penpotu. |
+| Stránka „Nedaří se spojit s databází“, `ENOTFOUND penpot-postgres`, kontejnery přitom běží | Kontejnery jsou ve výchozí síti `bridge` (v Portaineru mají IP `172.17.x.x`). Naimportuj aktuální `zimaos/docker-compose.yml` (síť `penpotos`). |
 | Prohlížeč hlásí `ERR_CONNECTION_REFUSED` na portu 9001 | Kontejner `penpotos-core` neběží nebo ZimaOS přemapoval port: zkontroluj stav a porty aplikace v ZimaOS (`docker ps -a --filter name=penpot`), log `docker logs --tail 50 penpotos-core`. Verze před 4. 10. 2026 se při chybě konfigurace ukončovaly – aktualizuj image. |
 | Admin hlásí „PREPL nedostupný“ | Backend ještě startuje, nebo chybí flag `enable-prepl-server` (je v `docker-compose.yml`). |
 | MCP: „Nepodařilo se otevřít soubor“ | `docker compose logs penpotos-mcp`; headless Chromium potřebuje RAM (`shm_size: 1gb` je nastaveno). |
