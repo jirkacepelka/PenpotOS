@@ -31,7 +31,8 @@ export function readConfigFile(name: string, maxAgeMs = 5_000): string | undefin
   } catch {
     value = undefined;
   }
-  fileCache.set(name, { at: Date.now(), value });
+  // Only found values are cached, so a file written later (penpotos-init) is picked up at once.
+  if (value !== undefined) fileCache.set(name, { at: Date.now(), value });
   return value;
 }
 
