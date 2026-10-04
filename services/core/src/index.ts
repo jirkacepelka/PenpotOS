@@ -37,7 +37,9 @@ function prepareConfig() {
 }
 
 async function bootstrapOnce() {
-  if (!env.secretKey || !env.internalToken) prepareConfig();
+  // Normally penpotos-init writes the files within a second; core fills in only if it did not
+  // (from the second attempt on, so the two never generate different values at the same time).
+  if ((!env.secretKey || !env.internalToken) && bootstrapState().attempts > 1) prepareConfig();
   checkConfig();
   await waitForDatabase(20_000);
   await migrate();
