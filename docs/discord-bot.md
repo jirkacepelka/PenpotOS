@@ -30,10 +30,14 @@ Bot čte zprávy v nastavených kanálech, ke každému úkolu založí vlákno,
 
 ## 4. Použití
 
-V nastaveném kanálu napiš úkol, případně přilož obrázky (logo, fotku):
+Bot reaguje jen na **@zmínku** nebo na **odpověď na svou zprávu**. Běžná konverzace v kanálu ho nespouští a nestojí žádné AI kredity. Chování jde přepnout v adminu (*Reagovat jen na @zmínku…*). Kontrola rolí proběhne dřív, než se zavolá AI.
 
-> Udělej banner na Facebook 1200×630 na akci „Den svobody 15. 11.“ v souboru Kampaň → Sociální sítě → Facebook. Fotku z přílohy dej doleva.
+V nastaveném kanálu bota označ a napiš úkol, případně přilož obrázky (logo, fotku):
+
+> @Voluntia AI Udělej banner na Facebook 1200×630 na akci „Den svobody 15. 11.“ v souboru Kampaň → Sociální sítě → Facebook. Fotku z přílohy dej doleva.
 
 * Přiložené obrázky AI vidí a umí je vložit do návrhu (`import_image`).
-* V jiných kanálech reaguje bot na @zmínku (lze vypnout).
+* Ve vlákně pokračuješ odpovědí na zprávu bota (nebo @zmínkou), např. „udělej text větší“.
+* **Šablony:** když existuje soubor nebo board „Šablona…“, AI ho zkopíruje (`copy_shapes`) a jen vymění texty a fotky. Výsledky jsou pak výrazně blíž vašemu stylu než návrh od nuly.
+* **Kvalita:** na samostatnou tvorbu doporučujeme Claude Opus 5.5 s úsilím *high*. Sonnet je rychlejší a levnější a hodí se hlavně na úpravy podle šablon.
 * Všechny úkoly jsou v *Audit log* (zdroj Discord).

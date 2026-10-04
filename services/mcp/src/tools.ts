@@ -527,6 +527,32 @@ export async function createMcpServer(caller: Caller): Promise<McpServer> {
     );
 
     tool(
+      "copy_shapes",
+      {
+        title: "Copy shapes to another page or file",
+        description:
+          "Copies shapes (boards, groups, texts, images – including nested content, image fills and component instances) " +
+          "to another page of the same file or to another file, like copy & paste in Penpot. Use it to reuse templates: " +
+          "copy a template board from the templates file into the target file, then edit the copy with execute_code. " +
+          "The Plugin API itself can only modify the current page, so do not try to move shapes between pages in execute_code. " +
+          "Returns the ids of the pasted shapes.",
+        inputSchema: {
+          fileId: fileIdSchema.describe("File that contains the shapes."),
+          shapeIds: z.array(z.string().min(1)).min(1).max(50).describe("Ids of the shapes to copy (top-level shapes of one page)."),
+          pageId: pageIdSchema.describe("Page that contains the shapes (default: the current page of the file)."),
+          targetFileId: z.string().optional().describe("Target file (default: the same file)."),
+          targetPageId: z.string().optional().describe("Target page (default: the current page of the target file)."),
+        },
+      },
+      async (args) => {
+        await assertWrite();
+        const out = await browserPool.copyShapes({ ...args, storageKey: caller.storageKey });
+        if (!out.ok) return { content: [{ type: "text", text: `Copy failed: ${out.error}` }], isError: true };
+        return { content: [{ type: "text", text: JSON.stringify({ pasted: out.pasted, targetFileId: args.targetFileId ?? args.fileId }) }] };
+      },
+    );
+
+    tool(
       "request_image_upload",
       {
         title: "Request image upload",

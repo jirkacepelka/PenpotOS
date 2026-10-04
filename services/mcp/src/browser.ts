@@ -73,6 +73,39 @@ class FileSession {
   }
 }
 
+/** Clipboard API for the (insecure) internal origin; text types as strings, binary types as base64. */
+const CLIPBOARD_POLYFILL = `(() => {
+  if (navigator.clipboard) return;
+  const bridge = (op, data) => window.__ppClipboard(op, data);
+  const isText = (t) => t.startsWith("text/") || t.includes("json") || t.includes("penpot");
+  const toB64 = async (blob) => { const b = new Uint8Array(await blob.arrayBuffer()); let s = ""; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(s); };
+  const fromB64 = (s, type) => { const bin = atob(s); const b = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i); return new Blob([b], { type }); };
+  class ClipboardItemPolyfill {
+    constructor(items) { this._items = items; this.types = Object.keys(items); }
+    async getType(t) { const v = await this._items[t]; return v instanceof Blob ? v : new Blob([v], { type: t }); }
+  }
+  if (!window.ClipboardItem) window.ClipboardItem = ClipboardItemPolyfill;
+  const clipboard = {
+    async writeText(text) { await bridge("set", { "text/plain": String(text) }); },
+    async readText() { return (await bridge("get"))["text/plain"] ?? ""; },
+    async write(items) {
+      const data = {};
+      for (const item of items) for (const t of item.types) {
+        const blob = await item.getType(t);
+        data[t] = isText(t) ? await blob.text() : "b64:" + (await toB64(blob));
+      }
+      await bridge("set", data);
+    },
+    async read() {
+      const data = await bridge("get");
+      const items = {};
+      for (const [t, v] of Object.entries(data)) items[t] = v.startsWith("b64:") && !isText(t) ? fromB64(v.slice(4), t) : new Blob([v], { type: t });
+      return Object.keys(items).length ? [new ClipboardItemPolyfill(items)] : [];
+    },
+  };
+  Object.defineProperty(navigator, "clipboard", { value: clipboard, configurable: true });
+})();`;
+
 export class BrowserPool {
   private browser?: Browser;
   private context?: BrowserContext;
@@ -112,7 +145,13 @@ export class BrowserPool {
         this.browser = await chromium.launch({
           headless: true,
           executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || undefined,
-          args: ["--no-sandbox", "--disable-dev-shm-usage", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"],
+          args: [
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--use-angle=swiftshader",
+            "--enable-unsafe-swiftshader",
+            "--ignore-gpu-blocklist",
+          ],
         });
         this.browser.on("disconnected", () => {
           log.warn("Chromium disconnected");
@@ -125,6 +164,13 @@ export class BrowserPool {
           locale: "cs-CZ",
           timezoneId: "Europe/Prague",
         });
+        // The internal http origin is not a secure context, so the browser offers no Clipboard API.
+        // Penpot needs one for copy & paste (copy_shapes): provide a clipboard shared by all tabs.
+        await context.exposeBinding("__ppClipboard", (_src, op: "set" | "get", data?: Record<string, string>) => {
+          if (op === "set") this.clipboardData = data ?? {};
+          return this.clipboardData;
+        });
+        await context.addInitScript(CLIPBOARD_POLYFILL);
         // Penpot's config.js pins the API base to the public URL; the headless browser talks to
         // the internal frontend directly, so point the app at the internal origin instead.
         await context.route(/\/js\/config\.js(\?|$)/, async (route) => {
@@ -339,6 +385,102 @@ export class BrowserPool {
       }
       return outcome;
     });
+  }
+
+  /**
+   * Copies shapes to another page or file the way a person would: select, Ctrl+C, switch, Ctrl+V.
+   * The Plugin API can only modify the active page and cannot reach other files, while Penpot's
+   * own clipboard keeps everything (texts, images, components, layout).
+   */
+  async copyShapes(opts: {
+    fileId: string;
+    shapeIds: string[];
+    pageId?: string;
+    targetFileId?: string;
+    targetPageId?: string;
+    storageKey?: string;
+  }): Promise<{ ok: boolean; error?: string; pasted?: { id: string; name: string; x: number; y: number; width: number; height: number }[] }> {
+    const targetFileId = opts.targetFileId ?? opts.fileId;
+    // One clipboard per browser: copy operations of different users must not interleave.
+    const release = await this.lockClipboard();
+    try {
+      const select = `const ids = ${JSON.stringify(opts.shapeIds)};
+        // Switch to the page that holds the shapes (the tab may still show another page).
+        const home = penpot.currentFile.pages.find((p) => p.getShapeById?.(ids[0]));
+        if (home && home.id !== penpot.currentPage.id) {
+          penpot.openPage(home);
+          for (let i = 0; i < 40 && penpot.currentPage.id !== home.id; i++) await new Promise((r) => setTimeout(r, 100));
+        }
+        const shapes = ids.map((id) => penpot.currentPage.getShapeById?.(id) ?? penpotUtils.findShapeById(id)).filter(Boolean);
+        if (shapes.length !== ids.length) throw new Error("Shape not found on this page: " + ids.filter((id) => !penpotUtils.findShapeById(id)).join(", "));
+        penpot.selection = shapes;
+        return shapes.length;`;
+      const src = await this.session(opts.fileId);
+      // Keyboard shortcuts only reach Penpot once the canvas has focus.
+      await src.run(() => this.focusCanvas(src));
+      const selected = await this.exec(opts.fileId, select, { storageKey: opts.storageKey, pageId: opts.pageId });
+      if (!selected.ok) return { ok: false, error: selected.error };
+      const copied = await src.run(async () => {
+        this.clipboardData = {};
+        await src.page.keyboard.press("ControlOrMeta+c");
+        for (let i = 0; i < 20; i++) {
+          await new Promise((r) => setTimeout(r, 150));
+          if (Object.keys(this.clipboardData).length) return true;
+        }
+        return false;
+      });
+      if (!copied) {
+        const diag = await src.page
+          .evaluate(() => `secure=${isSecureContext} clipboard=${typeof navigator.clipboard} focus=${document.activeElement?.tagName}.${(document.activeElement as HTMLElement)?.className ?? ""}`)
+          .catch((e) => String(e));
+        return { ok: false, error: `Copy failed (Penpot did not write to the clipboard; ${diag})` };
+      }
+
+      const dst = await this.session(targetFileId);
+      const prepared = await this.exec(targetFileId, "return penpot.currentPage.id;", { storageKey: opts.storageKey, pageId: opts.targetPageId });
+      if (!prepared.ok) return { ok: false, error: prepared.error };
+      await dst.run(() => this.focusCanvas(dst));
+      const cleared = await this.exec(targetFileId, "penpot.selection = []; return true;", { storageKey: opts.storageKey, pageId: opts.targetPageId });
+      if (!cleared.ok) return { ok: false, error: cleared.error };
+      const types = Object.keys(this.clipboardData);
+      await dst.run(async () => {
+        // Penpot pastes from the DOM paste event; headless Chromium would fire it with the (empty)
+        // system clipboard, so dispatch it with the copied data instead.
+        await dst.page.evaluate((data) => {
+          const dt = new DataTransfer();
+          for (const [t, v] of Object.entries(data)) if (!v.startsWith("b64:")) dt.setData(t, v);
+          const target = document.activeElement ?? document.body;
+          target.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+        }, this.clipboardData);
+      });
+      log.debug(`paste of ${types.join(", ")} into ${targetFileId}`);
+      const read = `for (let i = 0; i < 40 && penpot.selection.length === 0; i++) await new Promise((r) => setTimeout(r, 150));
+        return penpot.selection.map((s) => ({ id: s.id, name: s.name, x: s.x, y: s.y, width: s.width, height: s.height }));`;
+      const result = await this.exec(targetFileId, read, { storageKey: opts.storageKey, pageId: opts.targetPageId });
+      if (!result.ok) return { ok: false, error: result.error };
+      const pasted = result.result as any[];
+      if (!pasted?.length) return { ok: false, error: "Paste failed (nothing was inserted)" };
+      return { ok: true, pasted };
+    } finally {
+      release();
+    }
+  }
+
+  private clipboardData: Record<string, string> = {};
+  private clipboardQueue: Promise<void> = Promise.resolve();
+  private async lockClipboard(): Promise<() => void> {
+    let release!: () => void;
+    const prev = this.clipboardQueue;
+    this.clipboardQueue = new Promise<void>((r) => (release = r));
+    await prev;
+    return release;
+  }
+
+  /** Gives the workspace keyboard focus with a click on an empty spot of the canvas. */
+  private async focusCanvas(session: FileSession) {
+    await session.page.bringToFront();
+    const vp = session.page.viewportSize() ?? { width: 1600, height: 1000 };
+    await session.page.mouse.click(Math.round(vp.width * 0.55), vp.height - 60);
   }
 
   private async evict(keep: number) {

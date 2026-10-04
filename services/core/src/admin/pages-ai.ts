@@ -167,6 +167,7 @@ aiRouter.get("/integrations", async (req, res) => {
         <div><label>ID rolí, které smí zadávat úkoly (prázdné = všichni v kanálu)</label><input type="text" name="allowedRoleIds" value="${d.allowedRoleIds.join(", ")}"></div>
       </div>
       <label class="inline"><input type="checkbox" name="useThreads" ${d.useThreads ? "checked" : ""}> Každý úkol řešit ve vlastním vláknu</label>
+      <label class="inline"><input type="checkbox" name="mentionOnly" ${d.mentionOnly ? "checked" : ""}> Reagovat jen na @zmínku bota nebo na odpověď na jeho zprávu (i v nastavených kanálech a vláknech)</label>
       <label class="inline"><input type="checkbox" name="respondToMentions" ${d.respondToMentions ? "checked" : ""}> Reagovat i na @zmínku v jiných kanálech</label>
       <label>Systémový prompt</label>
       <textarea name="systemPrompt">${d.systemPrompt}</textarea>
@@ -214,6 +215,7 @@ aiRouter.post("/integrations/discord", async (req, res) => {
       allowedRoleIds: ids(b.allowedRoleIds),
       useThreads: b.useThreads === "on",
       respondToMentions: b.respondToMentions === "on",
+      mentionOnly: b.mentionOnly === "on",
       systemPrompt: String(b.systemPrompt ?? ""),
     });
     await audit({ source: "admin", actor: req.admin!.email, action: "settings.discord" });

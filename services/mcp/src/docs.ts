@@ -65,6 +65,23 @@ in a headless Penpot workspace on the server on demand.
 * Always share the workspace link returned by the tools with the user when you created or changed something.
 * The organisation's brand colours and typographies live in the shared library file (usually "Voluntia – Brand");
   prefer them over ad-hoc values (\`penpot.library.connected\`, \`penpot.library.availableLibraries()\`).
+* The Plugin API can only modify the current page and cannot reach other files. To move or copy shapes between
+  pages or files use \`copy_shapes\` (it works like copy & paste in Penpot, images and texts included).
+
+## Creating graphics (social posts, posters, banners)
+
+1. **Understand the request first.** A question or discussion ("Does it make sense to make a post about X?")
+   deserves an answer, not an automatic design. Only design when asked to, or when you propose it and the
+   request clearly implies it. Use every concrete fact from the message (dates, places, names, the media
+   outlet …) in the graphic; if essential facts are missing, ask before designing.
+2. **Templates first.** Look for existing templates (\`search_files\` with "šablon", "template"; boards whose name
+   starts with "Šablona"/"Template"). If one fits, copy it with \`copy_shapes\` into the target file and only
+   replace texts and photos – this matches the organisation's visual style far better than a design from scratch.
+3. **When designing from scratch,** reuse the layout language of existing graphics in the team: strong
+   hierarchy (one dominant headline, large and bold), brand colours from the library, generous margins,
+   at most 2–3 text sizes, high contrast, text never over busy image areas, photo cut-outs/gradients behind text.
+4. **Check your result.** Export a preview (\`export_shape\`), look at it critically (overflowing or clipped
+   text, alignment, contrast, empty space, typos in Czech diacritics) and fix issues before you hand it over.
 `;
 
 let overview: string | undefined;
