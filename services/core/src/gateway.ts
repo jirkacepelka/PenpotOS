@@ -38,6 +38,32 @@ export async function isBlocked(url: string): Promise<string | undefined> {
   return undefined;
 }
 
+function isPrivateHost(hostname: string): boolean {
+  return (
+    hostname === "localhost" ||
+    hostname.endsWith(".local") ||
+    /^(10|127)\.\d+\.\d+\.\d+$/.test(hostname) ||
+    /^192\.168\.\d+\.\d+$/.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/.test(hostname)
+  );
+}
+
+/**
+ * Penpot builds asset URLs (e.g. finished exports) from its configured public address.
+ * When a member uses Penpot from another address (LAN IP vs. tunnel domain), the browser
+ * fetches those assets cross-origin – allow that for the PenpotOS address and LAN origins.
+ */
+export function assetCorsOrigin(url: string, origin: string | undefined): string | undefined {
+  if (!origin || !url.startsWith("/assets/")) return undefined;
+  try {
+    const o = new URL(origin);
+    if (o.origin === new URL(env.publicUrl).origin || isPrivateHost(o.hostname)) return o.origin;
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
 export function isMcpPath(url: string): boolean {
   return MCP_PATHS.some((re) => re.test(url));
 }
@@ -58,6 +84,15 @@ export function startGateway(port: number) {
     }
   });
 
+  proxy.on("proxyRes", (proxyRes: http.IncomingMessage, req: http.IncomingMessage) => {
+    const allowed = assetCorsOrigin(req.url ?? "", req.headers.origin);
+    if (allowed) {
+      proxyRes.headers["access-control-allow-origin"] = allowed;
+      proxyRes.headers["access-control-allow-credentials"] = "true";
+      proxyRes.headers["vary"] = "Origin";
+    }
+  });
+
   const server = http.createServer(async (req, res) => {
     const url = req.url ?? "/";
     stripInternalHeaders(req.headers);
@@ -74,6 +109,19 @@ export function startGateway(port: number) {
       if (url.startsWith("/penpotos-status") || (isPage && startup.status === "error")) {
         res.writeHead(startup.status === "ready" ? 200 : 503, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
         res.end(renderStatusPage());
+        return;
+      }
+      const corsOrigin = assetCorsOrigin(url, req.headers.origin);
+      if (req.method === "OPTIONS" && corsOrigin) {
+        res.writeHead(204, {
+          "Access-Control-Allow-Origin": corsOrigin,
+          "Access-Control-Allow-Credentials": "true",
+          "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+          "Access-Control-Allow-Headers": req.headers["access-control-request-headers"] ?? "*",
+          "Access-Control-Max-Age": "600",
+          Vary: "Origin",
+        });
+        res.end();
         return;
       }
       const reason = await isBlocked(url);

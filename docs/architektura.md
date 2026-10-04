@@ -26,7 +26,7 @@ PenpotOS dělá totéž, jen na serveru:
 ## Bezpečnost – doporučení
 
 * Admin dashboard (port 9002) nevystavuj do internetu bez ochrany (Cloudflare Access, VPN, `PENPOTOS_ADMIN_BIND=127.0.0.1`).
-* Hodnoty v `.env` jsou tajné. API klíče zadané v adminu jsou v DB šifrované (AES-256-GCM, klíč z `PENPOTOS_SECRET_KEY`).
+* Tajné klíče generuje `penpotos-init` do volume `config` (`/config`, čitelné jen pro kontejnery PenpotOS a Penpotu). Hodnoty v `.env` je volitelně přepíšou. API klíče zadané v adminu jsou v DB šifrované (AES-256-GCM, klíč z `PENPOTOS_SECRET_KEY`).
 * OAuth: přístupový token platí 1 h, refresh token 30 dní s rotací; vše lze zrušit v adminu. Odebrání AI přístupu nebo blokace člena zruší jeho tokeny.
 * AI pracuje pod servisním účtem, který je editorem ve všech týmech – rozsah omez v *AI & MCP* (týmy, jen čtení).
 
@@ -34,7 +34,6 @@ PenpotOS dělá totéž, jen na serveru:
 
 ```bash
 npm install
-cp .env.example .env   # vyplň tajné hodnoty
 # Penpot s porty vystavenými na localhost (ukázkový override):
 cat > compose.dev.yml <<'EOF'
 services:
@@ -69,9 +68,10 @@ PENPOTOS_MCP_URL=http://localhost:4400/mcp node --import tsx scripts/smoke-mcp.t
 
 | Proměnná | Výchozí | Služba |
 |---|---|---|
-| `PENPOTOS_PUBLIC_URL` | `http://localhost:9001` | všechny |
-| `PENPOTOS_DATABASE_URL` | `postgresql://penpot:penpot@penpot-postgres:5432/penpot` | všechny |
-| `PENPOTOS_SECRET_KEY`, `PENPOTOS_INTERNAL_TOKEN` | – (povinné) | všechny |
+| `PENPOTOS_CONFIG_DIR` | `/config` | všechny (vygenerované klíče, `public_url`, start skripty Penpotu) |
+| `PENPOTOS_PUBLIC_URL` | soubor `public_url` (admin), jinak `http://localhost:9001` | všechny |
+| `PENPOTOS_DATABASE_URL` | `postgresql://penpot:<postgres_password>@penpot-postgres:5432/penpot` | všechny |
+| `PENPOTOS_SECRET_KEY`, `PENPOTOS_INTERNAL_TOKEN` | soubory z `/config` | všechny |
 | `PENPOT_INTERNAL_URL` | `http://penpot-frontend:8080` | core, mcp |
 | `PENPOT_BACKEND_URL` | `http://penpot-backend:6060` | všechny |
 | `PENPOT_PREPL_HOST` / `PENPOT_PREPL_PORT` | `penpot-backend` / `6063` | core |

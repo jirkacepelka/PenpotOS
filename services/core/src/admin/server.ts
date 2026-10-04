@@ -9,6 +9,7 @@ import { onboardingRouter } from "./pages-onboarding.ts";
 import { teamsRouter } from "./pages-teams.ts";
 import { usersRouter } from "./pages-users.ts";
 import { requireAdmin } from "./session.ts";
+import { setupRouter } from "./setup.ts";
 import { bootstrapState, renderStatusPage } from "../bootstrap-state.ts";
 
 const log = createLogger("admin");
@@ -35,6 +36,7 @@ export function createAdminApp() {
     res.setHeader("Cache-Control", "no-store");
     res.status(503).type("html").send(renderStatusPage());
   });
+  app.use(setupRouter);
   app.use(publicRouter);
   app.use(requireAdmin);
   app.use(miscRouter, usersRouter, teamsRouter, onboardingRouter, aiRouter);

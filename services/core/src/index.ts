@@ -1,34 +1,45 @@
-import { createLogger, env, migrate, waitForDatabase } from "@penpotos/shared";
+import { configDir, createLogger, env, migrate, waitForDatabase } from "@penpotos/shared";
 import { startAdmin } from "./admin/server.ts";
 import { ConfigError, bootstrapState, markAttempt, markError, markReady } from "./bootstrap-state.ts";
 import { startGateway } from "./gateway.ts";
+import { initConfigDir } from "./init-secrets.ts";
 import { adoptExistingProfiles, ensureBootstrapAdmin, ensureBotAccount } from "./members.ts";
 import { startSyncLoop } from "./sync.ts";
 
 const log = createLogger("core");
 
 function checkConfig() {
-  if (!env.secretKey || env.secretKey.length < 16) {
-    throw new ConfigError("Chybí PENPOTOS_SECRET_KEY", "Nastav penpotos_secret_key (PENPOTOS_SECRET_KEY) na náhodný řetězec o délce alespoň 32 znaků.");
-  }
-  if (!env.internalToken) {
-    throw new ConfigError("Chybí PENPOTOS_INTERNAL_TOKEN", "Nastav internal_token (PENPOTOS_INTERNAL_TOKEN) na náhodný řetězec.");
-  }
-  // Placeholders from zimaos/docker-compose.yml must be replaced before the first start.
-  const values = { PENPOTOS_SECRET_KEY: env.secretKey, PENPOTOS_INTERNAL_TOKEN: env.internalToken, PENPOTOS_ADMIN_PASSWORD: env.bootstrapAdminPassword };
-  const left = Object.entries(values)
-    .filter(([, v]) => v.startsWith("ZMEN-"))
+  // Secrets come from the environment or from the config volume prepared by penpotos-init.
+  const missing = [
+    ["PENPOTOS_SECRET_KEY", env.secretKey],
+    ["PENPOTOS_INTERNAL_TOKEN", env.internalToken],
+  ]
+    .filter(([, v]) => !v || v.length < 16)
     .map(([k]) => k);
-  if (left.length) {
+  if (missing.length) {
     throw new ConfigError(
-      `V nastavení zůstala ukázková hodnota ZMEN-… (${left.join(", ")})`,
-      "V ZimaOS otevři nastavení aplikace PenpotOS (nebo YAML), nahraď všechny hodnoty začínající „ZMEN-“ vlastními náhodnými řetězci a aplikaci ulož/restartuj. " +
-        "Pozor: pokud změníš i postgres_password po prvním spuštění, je potřeba smazat volume penpotos_penpot_postgres_v15.",
+      `Chybí tajné klíče (${missing.join(", ")})`,
+      `Klíče generuje pomocná služba penpotos-init do volume s konfigurací (${configDir()}). Zkontroluj, že tato služba v aplikaci existuje a doběhla bez chyby, nebo klíče nastav proměnnými prostředí.`,
+    );
+  }
+}
+
+/** Same as the penpotos-init service – core does not depend on it, so it always starts. */
+function prepareConfig() {
+  try {
+    initConfigDir(configDir());
+  } catch (err: any) {
+    throw new ConfigError(
+      `Nelze zapsat konfiguraci do ${configDir()}`,
+      `Kontejner penpotos-core potřebuje zapisovatelný volume připojený do ${configDir()} (${err?.message ?? err}).`,
     );
   }
 }
 
 async function bootstrapOnce() {
+  // Normally penpotos-init writes the files within a second; core fills in only if it did not
+  // (from the second attempt on, so the two never generate different values at the same time).
+  if ((!env.secretKey || !env.internalToken) && bootstrapState().attempts > 1) prepareConfig();
   checkConfig();
   await waitForDatabase(20_000);
   await migrate();

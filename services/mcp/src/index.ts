@@ -8,14 +8,35 @@ import { createMcpServer, type Caller } from "./tools.ts";
 
 const log = createLogger("mcp");
 
-// The SDK refuses non-HTTPS issuers; plain HTTP is only acceptable for LAN testing.
-const publicUrl = new URL(env.publicUrl);
-if (publicUrl.protocol === "http:") process.env.MCP_DANGEROUSLY_ALLOW_INSECURE_ISSUER_URL = "true";
+// The SDK refuses non-HTTPS issuers. The public address is set in the admin dashboard and may
+// still be a LAN address (http) – Claude itself only connects over HTTPS anyway.
+process.env.MCP_DANGEROUSLY_ALLOW_INSECURE_ISSUER_URL = "true";
 const { mcpAuthRouter } = await import("@modelcontextprotocol/sdk/server/auth/router.js");
 
 const provider = new PenpotOAuthProvider();
-const mcpUrl = new URL("/mcp", publicUrl);
-const resourceMetadataUrl = new URL("/.well-known/oauth-protected-resource/mcp", publicUrl).href;
+const publicBase = () => new URL(env.publicUrl);
+const resourceMetadataUrl = () => new URL("/.well-known/oauth-protected-resource/mcp", publicBase()).href;
+
+/** OAuth endpoints and metadata, rebuilt whenever the public address changes. */
+let authRouter: { url: string; router: express.RequestHandler } | undefined;
+function currentAuthRouter(): express.RequestHandler {
+  const url = env.publicUrl;
+  if (authRouter?.url !== url) {
+    const base = new URL(url);
+    authRouter = {
+      url,
+      router: mcpAuthRouter({
+        provider,
+        issuerUrl: base,
+        resourceServerUrl: new URL("/mcp", base),
+        scopesSupported: ["penpot"],
+        resourceName: "Penpot (PenpotOS)",
+      }),
+    };
+    log.info(`OAuth issuer: ${base.origin}`);
+  }
+  return authRouter.router;
+}
 
 declare global {
   namespace Express {
@@ -28,7 +49,7 @@ declare global {
 function unauthorized(res: Response, description: string) {
   res
     .status(401)
-    .set("WWW-Authenticate", `Bearer error="invalid_token", error_description="${description.replace(/"/g, "'")}", resource_metadata="${resourceMetadataUrl}"`)
+    .set("WWW-Authenticate", `Bearer error="invalid_token", error_description="${description.replace(/"/g, "'")}", resource_metadata="${resourceMetadataUrl()}"`)
     .json({ error: "invalid_token", error_description: description });
 }
 
@@ -58,15 +79,7 @@ app.disable("x-powered-by");
 
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
-app.use(
-  mcpAuthRouter({
-    provider,
-    issuerUrl: publicUrl,
-    resourceServerUrl: mcpUrl,
-    scopesSupported: ["penpot"],
-    resourceName: "Penpot (PenpotOS)",
-  }),
-);
+app.use((req, res, next) => currentAuthRouter()(req, res, next));
 app.post("/penpotos-auth/login", express.urlencoded({ extended: false }), (req, res, next) => {
   provider.handleLogin(req, res).catch(next);
 });
@@ -127,7 +140,7 @@ async function main() {
   await waitForDatabase();
   await migrate();
   const port = env.int("PENPOTOS_MCP_PORT", 4400);
-  const server = app.listen(port, () => log.info(`MCP server listening on :${port} (public endpoint ${mcpUrl.href})`));
+  const server = app.listen(port, () => log.info(`MCP server listening on :${port} (public endpoint ${new URL("/mcp", publicBase()).href})`));
   server.requestTimeout = 0;
   const stop = async () => {
     log.info("shutting down");

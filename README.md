@@ -44,14 +44,13 @@ Všechno (včetně oprávnění AI) se nastavuje **jen v admin dashboardu**.
 
 ```bash
 git clone https://github.com/jirkacepelka/PenpotOS.git && cd PenpotOS
-cp .env.example .env
-# vyplň hesla/klíče (openssl rand -hex 32), PENPOTOS_PUBLIC_URL a prvního admina
-docker compose up -d                       # jen v lokální síti
-docker compose --profile tunnel up -d      # + Cloudflare Tunnel
+docker compose up -d                       # nic se nevyplňuje, klíče se vygenerují samy
 ```
 
-* Penpot: `http://<server>:9001` (nebo tvoje doména přes tunel)
-* Admin dashboard: `http://<server>:9002` – přihlášení e-mailem a heslem z `PENPOTOS_ADMIN_*`
+Na ZimaOS stačí naimportovat [`zimaos/docker-compose.yml`](zimaos/docker-compose.yml) beze změn.
+
+* Admin dashboard: `http://<server>:9002`. Při prvním otevření vytvoříš administrátora a nastavíš veřejnou adresu.
+* Penpot: `http://<server>:9001` (nebo tvoje doména přes Cloudflare Tunnel)
 
 Podrobné návody:
 
