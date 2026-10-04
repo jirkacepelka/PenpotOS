@@ -5,6 +5,7 @@ import { z } from "zod";
 import { audit, botCall, createLogger, env, fileTeamId, getSettings, getState, workspaceUrl } from "@penpotos/shared";
 import { AccessDeniedError, browserPool, type ExecOutcome } from "./browser.ts";
 import { SERVER_INSTRUCTIONS, apiInfo, highLevelOverview } from "./docs.ts";
+import { createUploadSlot, storeDownload, takeUploads } from "./files.ts";
 
 const log = createLogger("tools");
 
@@ -388,7 +389,9 @@ export async function createMcpServer(caller: Caller): Promise<McpServer> {
     {
       title: "Export shape",
       description:
-        "Exports a shape (or a shape's image fill) from the Penpot design to a PNG or SVG image, such that you can get an impression of what it looks like.",
+        "Exports a shape (or a shape's image fill) from the Penpot design to a PNG or SVG image, such that you can get an impression of what it looks like. " +
+        "Set download=true to also get a download link for the user (e.g. the finished graphic) – share that link in your reply; " +
+        "use scale 2–4 for a sharper result.",
       inputSchema: {
         fileId: fileIdSchema,
         shapeId: z
@@ -401,10 +404,12 @@ export async function createMcpServer(caller: Caller): Promise<McpServer> {
           .default("shape")
           .describe("'shape' (full shape including descendants; default) or 'fill' (raw image used as the shape's fill; PNG only)."),
         pageId: pageIdSchema,
+        download: z.boolean().default(false).describe("Also store the image and return a download link (valid 7 days) to share with the user."),
+        scale: z.number().min(0.25).max(4).optional().describe("PNG resolution multiplier (default 1; 2 = retina/print quality)."),
       },
       readOnly: true,
     },
-    async ({ fileId, shapeId, format, mode, pageId }) => {
+    async ({ fileId, shapeId, format, mode, pageId, download, scale }) => {
       // Penpot's exporter cannot render the page root itself, so "page" exports its top-level shapes.
       const targets =
         shapeId === "page"
@@ -416,7 +421,11 @@ export async function createMcpServer(caller: Caller): Promise<McpServer> {
         if (!shapes.length) throw new Error(${JSON.stringify(shapeId === "page" ? "The page is empty" : `Shape not found: ${shapeId}`)});
         const out = [];
         for (const s of shapes) {
-          const bytes = await penpotUtils.exportImage(s, ${JSON.stringify(mode)}, ${format === "svg"});
+          const bytes = ${
+            scale && scale !== 1 && mode === "shape" && format === "png"
+              ? `(await new Promise((r) => setTimeout(r, 200)), await s.export({ type: "png", scale: ${Number(scale)} }))`
+              : `await penpotUtils.exportImage(s, ${JSON.stringify(mode)}, ${format === "svg"})`
+          };
           let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
           out.push({ id: s.id, name: s.name, data: btoa(bin) });
         }
@@ -426,10 +435,21 @@ export async function createMcpServer(caller: Caller): Promise<McpServer> {
       const exported = outcome.result as { id: string; name: string; data: string }[];
       const content: any[] = [];
       if (shapeId === "page") content.push({ type: "text", text: `Exported top-level shapes: ${exported.map((e) => `${e.name} (${e.id})`).join(", ")}` });
+      const links: string[] = [];
       for (const e of exported) {
         const bytes = Buffer.from(e.data, "base64");
-        if (format === "svg") content.push({ type: "text", text: bytes.toString("utf8") });
-        else content.push({ type: "image", data: e.data, mimeType: detectMime(bytes) });
+        const mimeType = format === "svg" ? "image/svg+xml" : detectMime(bytes);
+        if (download) links.push(`${e.name}: ${storeDownload(bytes, mimeType, e.name)}`);
+        if (format === "svg") {
+          // The SVG source is only useful to the model when no download was requested.
+          if (!download) content.push({ type: "text", text: bytes.toString("utf8") });
+        } else content.push({ type: "image", data: e.data, mimeType });
+      }
+      if (links.length) {
+        content.unshift({
+          type: "text",
+          text: `Download links for the user (valid 7 days, add ?download to force a file download):\n${links.join("\n")}`,
+        });
       }
       return { content };
     },
@@ -443,11 +463,14 @@ export async function createMcpServer(caller: Caller): Promise<McpServer> {
         description:
           "Imports a pixel image (from an http(s) URL or base64 data) into a design file by creating a Rectangle that uses the image as a fill. " +
           "The rectangle has the image's original proportions by default. Optionally accepts position (x, y) and dimensions (width, height); " +
-          "if only one dimension is provided, the other keeps the aspect ratio. Supported formats: JPEG, PNG, GIF, WEBP.",
+          "if only one dimension is provided, the other keeps the aspect ratio. Supported formats: JPEG, PNG, GIF, WEBP. " +
+          "For a photo the user has in the chat, you cannot pass its bytes – call request_image_upload, give the user the link, " +
+          "then call this tool with uploadId (it waits up to 2 minutes for the upload; with several photos all are imported side by side).",
         inputSchema: {
           fileId: fileIdSchema,
           url: z.string().url().optional().describe("Image URL (e.g. a Discord attachment)."),
           base64: z.string().optional().describe("Image data as base64 (alternative to url)."),
+          uploadId: z.string().optional().describe("Id returned by request_image_upload: imports the photos the user uploaded there."),
           name: z.string().optional(),
           x: z.number().optional(),
           y: z.number().optional(),
@@ -458,6 +481,32 @@ export async function createMcpServer(caller: Caller): Promise<McpServer> {
       },
       async (args) => {
         await assertWrite();
+        const n = (v: number | undefined) => (v === undefined ? "undefined" : String(v));
+        const importOne = async (data: Buffer, mime: string, name: string, x: number | undefined) => {
+          const code = `const r = await penpotUtils.importImage(${JSON.stringify(data.toString("base64"))}, ${JSON.stringify(mime)}, ${JSON.stringify(name)}, ${n(x)}, ${n(args.y)}, ${n(args.width)}, ${n(args.height)});
+            return { shapeId: r.id, name: r.name, x: r.x, y: r.y, width: r.width, height: r.height };`;
+          return browserPool.exec(args.fileId, code, { storageKey: caller.storageKey, pageId: args.pageId, timeoutMs });
+        };
+        if (args.uploadId) {
+          const files = await takeUploads(args.uploadId, caller.storageKey, 120_000);
+          if (!files.length) {
+            return {
+              content: [{ type: "text", text: "Nothing has been uploaded yet. Ask the user to upload the photo via the link and call import_image with the same uploadId again." }],
+              isError: true,
+            };
+          }
+          const results: unknown[] = [];
+          let x = args.x;
+          for (const [i, f] of files.entries()) {
+            const outcome = await importOne(f.data, f.mime, files.length > 1 ? `${args.name ?? f.name.replace(/\.[a-z0-9]+$/i, "")} ${i + 1}` : (args.name ?? f.name.replace(/\.[a-z0-9]+$/i, "")), x);
+            if (!outcome.ok) return execResult(outcome);
+            const r = outcome.result as { x: number; width: number };
+            results.push(outcome.result);
+            // Place further photos to the right of the previous one.
+            x = r.x + r.width + 40;
+          }
+          return { content: [{ type: "text", text: JSON.stringify({ imported: results }) }] };
+        }
         let data: Buffer;
         let mime: string;
         let name = args.name;
@@ -471,12 +520,27 @@ export async function createMcpServer(caller: Caller): Promise<McpServer> {
           mime = detectMime(data);
           if (!mime.startsWith("image/")) throw new Error("Unsupported image format");
         } else {
-          throw new Error("Provide either url or base64");
+          throw new Error("Provide url, base64 or uploadId");
         }
-        const n = (v: number | undefined) => (v === undefined ? "undefined" : String(v));
-        const code = `const r = await penpotUtils.importImage(${JSON.stringify(data.toString("base64"))}, ${JSON.stringify(mime)}, ${JSON.stringify(name ?? "image")}, ${n(args.x)}, ${n(args.y)}, ${n(args.width)}, ${n(args.height)});
-          return { shapeId: r.id, name: r.name, x: r.x, y: r.y, width: r.width, height: r.height };`;
-        return execResult(await browserPool.exec(args.fileId, code, { storageKey: caller.storageKey, pageId: args.pageId, timeoutMs }));
+        return execResult(await importOne(data, mime, name ?? "image", args.x));
+      },
+    );
+
+    tool(
+      "request_image_upload",
+      {
+        title: "Request image upload",
+        description:
+          "Creates a private upload page (valid 2 hours) where the user can upload photos from their device. " +
+          "Use it whenever the user wants to place a photo or image they have locally (e.g. attached in the chat) into a design: " +
+          "you cannot pass attachment bytes to tools. Share the returned URL with the user in your reply, then call " +
+          "import_image with the uploadId – it waits for the upload.",
+        inputSchema: {},
+      },
+      async () => {
+        await assertWrite();
+        const { id, url } = createUploadSlot(caller.storageKey);
+        return { content: [{ type: "text", text: JSON.stringify({ uploadId: id, url, validFor: "2 hours" }) }] };
       },
     );
   }

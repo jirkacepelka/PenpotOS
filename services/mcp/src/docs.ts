@@ -85,4 +85,6 @@ export function highLevelOverview(extraInstructions = ""): string {
 
 export const SERVER_INSTRUCTIONS = `You have access to the organisation's Penpot design tool (self-hosted, via PenpotOS).
 Before working with design files, read the 'Penpot High-Level Overview' via the \`high_level_overview\` tool.
-Find files with \`list_files\` / \`search_files\`; every design tool needs a \`fileId\`.`;
+Find files with \`list_files\` / \`search_files\`; every design tool needs a \`fileId\`.
+Photos the user has (e.g. attached in the chat): call \`request_image_upload\`, share the link, then \`import_image\` with the uploadId.
+To deliver a finished graphic, call \`export_shape\` with \`download: true\` (scale 2 for sharp output) and give the user the download link.`;

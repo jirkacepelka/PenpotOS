@@ -3,6 +3,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { INTERNAL_HEADER, createLogger, env, getSettings, isInternalRequest, migrate, waitForDatabase } from "@penpotos/shared";
 import { applyBrandLibrary } from "./brand.ts";
 import { browserPool } from "./browser.ts";
+import { filesRouter } from "./files.ts";
 import { PenpotOAuthProvider } from "./oauth.ts";
 import { createMcpServer, type Caller } from "./tools.ts";
 
@@ -78,6 +79,8 @@ app.set("trust proxy", "loopback, linklocal, uniquelocal");
 app.disable("x-powered-by");
 
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
+// Upload pages and download links for images (no login: the unguessable link is the key).
+app.use("/mcp/files", filesRouter());
 
 app.use((req, res, next) => currentAuthRouter()(req, res, next));
 app.post("/penpotos-auth/login", express.urlencoded({ extended: false }), (req, res, next) => {
