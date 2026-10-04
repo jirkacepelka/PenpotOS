@@ -9,7 +9,7 @@ import { startSyncLoop } from "./sync.ts";
 const log = createLogger("core");
 
 function checkConfig() {
-  // Secrets come from the environment or from the config volume prepared by penpotos-init.
+  // Secrets come from the environment or from the config volume (written by prepareConfig).
   const missing = [
     ["PENPOTOS_SECRET_KEY", env.secretKey],
     ["PENPOTOS_INTERNAL_TOKEN", env.internalToken],
@@ -19,15 +19,22 @@ function checkConfig() {
   if (missing.length) {
     throw new ConfigError(
       `Chybí tajné klíče (${missing.join(", ")})`,
-      `Klíče generuje pomocná služba penpotos-init do volume s konfigurací (${configDir()}). Zkontroluj, že tato služba v aplikaci existuje a doběhla bez chyby, nebo klíče nastav proměnnými prostředí.`,
+      `Klíče se generují do volume s konfigurací (${configDir()}). Zkontroluj, že je kontejneru penpotos-core připojený zapisovatelný volume, nebo klíče nastav proměnnými prostředí.`,
     );
   }
 }
 
-/** Same as the penpotos-init service – core does not depend on it, so it always starts. */
+/**
+ * Writes missing secrets and the Penpot start scripts into the config volume.
+ * Postgres, the Penpot backend and the exporter wait for these files, so this runs first.
+ */
+let configPrepared = false;
 function prepareConfig() {
+  if (configPrepared) return;
   try {
-    initConfigDir(configDir());
+    const { created } = initConfigDir(configDir());
+    if (created.length) log.info(`generated ${created.join(", ")} in ${configDir()}`);
+    configPrepared = true;
   } catch (err: any) {
     throw new ConfigError(
       `Nelze zapsat konfiguraci do ${configDir()}`,
@@ -37,9 +44,7 @@ function prepareConfig() {
 }
 
 async function bootstrapOnce() {
-  // Normally penpotos-init writes the files within a second; core fills in only if it did not
-  // (from the second attempt on, so the two never generate different values at the same time).
-  if ((!env.secretKey || !env.internalToken) && bootstrapState().attempts > 1) prepareConfig();
+  prepareConfig();
   checkConfig();
   await waitForDatabase(20_000);
   await migrate();
@@ -66,6 +71,12 @@ async function bootstrap() {
       delay = Math.min(delay * 2, 60_000);
     }
   }
+}
+
+try {
+  prepareConfig();
+} catch {
+  // Reported on the status page by the first bootstrap attempt.
 }
 
 // Both listeners start immediately: Penpot is proxied while bootstrapping and

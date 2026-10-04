@@ -4,19 +4,12 @@ name: penpotos
 x-env: &env
   PENPOTOS_CONFIG_DIR: /config
   TZ: Europe/Prague
-x-init: &init
-  penpotos-init: { condition: service_completed_successfully }
+# Bez podmíněných depends_on: penpotos-core při startu zapíše hesla a startovací skripty
+# do volume "config" a ostatní kontejnery si na ně samy počkají.
 
 volumes: { config: {}, db: {}, assets: {}, discord: {} }
 
 services:
-  penpotos-init:
-    image: ghcr.io/jirkacepelka/penpotos-core:latest
-    command: ["node", "--import", "tsx", "src/init-secrets.ts"]
-    restart: "no"
-    volumes: [config:/config]
-    environment: *env
-
   penpotos-core:
     image: ghcr.io/jirkacepelka/penpotos-core:latest
     restart: unless-stopped
@@ -29,14 +22,12 @@ services:
     restart: unless-stopped
     init: true
     shm_size: 1gb
-    depends_on: { <<: *init, penpot-postgres: { condition: service_healthy } }
     volumes: [config:/config:ro]
     environment: *env
 
   penpotos-discord:
     image: ghcr.io/jirkacepelka/penpotos-discord:latest
     restart: unless-stopped
-    depends_on: { <<: *init, penpot-postgres: { condition: service_healthy } }
     volumes: [config:/config:ro, discord:/data]
     environment: *env
 
@@ -54,9 +45,8 @@ services:
   penpot-backend:
     image: penpotapp/backend:2.18
     restart: unless-stopped
-    command: ["/bin/bash", "/config/run-backend.sh"]
+    command: ["/bin/bash", "-c", "until [ -s /config/run-backend.sh ]; do sleep 2; done; exec bash /config/run-backend.sh"]
     volumes: [assets:/opt/data/assets, config:/config:ro]
-    depends_on: { <<: *init, penpot-postgres: { condition: service_healthy }, penpot-valkey: { condition: service_started } }
     environment:
       PENPOT_FLAGS: disable-registration enable-login-with-password enable-prepl-server disable-email-verification enable-access-tokens disable-onboarding disable-secure-session-cookies
       PENPOT_PREPL_HOST: 0.0.0.0
@@ -72,9 +62,8 @@ services:
   penpot-exporter:
     image: penpotapp/exporter:2.18
     restart: unless-stopped
-    command: ["/bin/bash", "/config/run-exporter.sh"]
+    command: ["/bin/bash", "-c", "until [ -s /config/run-exporter.sh ]; do sleep 2; done; exec bash /config/run-exporter.sh"]
     volumes: [config:/config:ro]
-    depends_on: { <<: *init, penpot-valkey: { condition: service_started } }
     environment:
       PENPOT_PUBLIC_URI: http://penpot-frontend:8080
       PENPOT_INTERNAL_URI: http://penpot-frontend:8080
@@ -84,7 +73,7 @@ services:
     image: postgres:15
     restart: unless-stopped
     stop_signal: SIGINT
-    depends_on: *init
+    command: ["bash", "-c", "until [ -s /config/postgres_password ]; do sleep 2; done; exec docker-entrypoint.sh postgres"]
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U penpot"], interval: 2s, retries: 30 }
     volumes: [db:/var/lib/postgresql/data, config:/config:ro]
     environment:

@@ -26,7 +26,7 @@ PenpotOS dělá totéž, jen na serveru:
 ## Bezpečnost – doporučení
 
 * Admin dashboard (port 9002) nevystavuj do internetu bez ochrany (Cloudflare Access, VPN, `PENPOTOS_ADMIN_BIND=127.0.0.1`).
-* Tajné klíče generuje `penpotos-init` do volume `config` (`/config`, čitelné jen pro kontejnery PenpotOS a Penpotu). Hodnoty v `.env` je volitelně přepíšou. API klíče zadané v adminu jsou v DB šifrované (AES-256-GCM, klíč z `PENPOTOS_SECRET_KEY`).
+* Tajné klíče generuje `penpotos-core` při startu do volume `config` (`/config`, čitelné jen pro kontejnery PenpotOS a Penpotu). Hodnoty v `.env` je volitelně přepíšou. API klíče zadané v adminu jsou v DB šifrované (AES-256-GCM, klíč z `PENPOTOS_SECRET_KEY`).
 * OAuth: přístupový token platí 1 h, refresh token 30 dní s rotací; vše lze zrušit v adminu. Odebrání AI přístupu nebo blokace člena zruší jeho tokeny.
 * AI pracuje pod servisním účtem, který je editorem ve všech týmech – rozsah omez v *AI & MCP* (týmy, jen čtení).
 

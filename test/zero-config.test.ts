@@ -18,7 +18,7 @@ afterEach(() => {
   delete process.env.PENPOTOS_PUBLIC_URL;
 });
 
-describe("penpotos-init", () => {
+describe("config volume init", () => {
   it("generates secrets once and never overwrites them", () => {
     const dir = tmp();
     expect(initConfigDir(dir, {}).created).toEqual([...SECRET_FILES]);
