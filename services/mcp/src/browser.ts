@@ -132,23 +132,20 @@ export class BrowserPool {
           const body = (await response.text()).replace(/^\s*var penpotPublicURI\s*=.*$/gm, "") + `\nvar penpotPublicURI = ${JSON.stringify(env.penpotInternalUrl)};\n`;
           await route.fulfill({ response, body });
         });
-        // Some URLs (e.g. exported assets returned by the exporter) still use the public URL;
-        // serve them from the internal frontend so the headless browser never leaves the server.
-        const publicOrigin = new URL(env.publicUrl).origin;
+        // Asset URLs (e.g. finished exports) are built from Penpot's configured public address,
+        // which may not be reachable from inside the server – serve them from the internal frontend.
         const internalOrigin = new URL(env.penpotInternalUrl).origin;
-        if (publicOrigin !== internalOrigin) {
-          await context.route(
-            (url) => url.origin === publicOrigin,
-            async (route) => {
-              const u = new URL(route.request().url());
-              const response = await route.fetch({ url: internalOrigin + u.pathname + u.search });
-              await route.fulfill({
-                response,
-                headers: { ...response.headers(), "access-control-allow-origin": internalOrigin, "access-control-allow-credentials": "true" },
-              });
-            },
-          );
-        }
+        await context.route(
+          (url) => url.origin !== internalOrigin && url.pathname.startsWith("/assets/"),
+          async (route) => {
+            const u = new URL(route.request().url());
+            const response = await route.fetch({ url: internalOrigin + u.pathname + u.search });
+            await route.fulfill({
+              response,
+              headers: { ...response.headers(), "access-control-allow-origin": internalOrigin, "access-control-allow-credentials": "true" },
+            });
+          },
+        );
         // Track Penpot's persistence requests (they are sent from a web worker, so this has to
         // happen at context level) and block them for read-only tabs.
         const saveTarget = (u: string) => (UPDATE_FILE_RE.test(u) ? this.sessionForFile(new URL(u).searchParams.get("id")) : undefined);

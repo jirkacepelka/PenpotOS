@@ -61,8 +61,8 @@ export function describeStartupError(err: unknown): StartupProblem {
     return {
       title: "Heslo databáze nesedí s existující databází",
       hint:
-        "Databáze (volume penpotos_penpot_postgres_v15) vznikla při dřívější instalaci s jiným heslem – PostgreSQL heslo přebírá jen při prvním vytvoření. " +
-        "Buď v nastavení vrať původní postgres_password, nebo aplikaci odinstaluj, smaž volume penpotos_penpot_postgres_v15 (příkaz: docker volume rm penpotos_penpot_postgres_v15) a nainstaluj znovu.",
+        "Databázový volume vznikl při dřívější instalaci s jiným heslem (PostgreSQL ho přebírá jen při prvním vytvoření). " +
+        "Aplikaci odinstaluj, smaž její volumy (docker volume ls | grep penpotos) a nainstaluj znovu.",
       detail,
     };
   }

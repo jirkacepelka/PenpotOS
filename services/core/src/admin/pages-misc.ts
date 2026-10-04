@@ -1,9 +1,10 @@
 import { Router } from "express";
-import { env, listActiveTokens, listProfiles, listTeams, recentAudit } from "@penpotos/shared";
+import { audit, env, listActiveTokens, listProfiles, listTeams, recentAudit } from "@penpotos/shared";
+import { savePublicUrl, suggestedPublicUrl } from "./setup.ts";
 import { allStatuses } from "../status.ts";
 import { getLastSyncReport } from "../sync.ts";
-import { esc, fmtDate, html, layout, raw } from "./html.ts";
-import { endSession, requireAdmin, startSession, takeFlash, verifyAdminCredentials } from "./session.ts";
+import { csrfField, esc, fmtDate, html, layout, raw } from "./html.ts";
+import { endSession, requireAdmin, setFlash, startSession, takeFlash, verifyAdminCredentials } from "./session.ts";
 
 export const publicRouter = Router();
 export const miscRouter = Router();
@@ -84,11 +85,30 @@ miscRouter.get("/", async (req, res) => {
       <p class="muted">Poslední synchronizace týmů: ${report ? fmtDate(report.at) : "zatím ne"}</p>
     </div>
     <div class="card">
-      <h2>Adresy</h2>
-      <p>Penpot pro členy: <a href="${env.publicUrl}" target="_blank">${env.publicUrl}</a></p>
-      <p>MCP connector pro Claude: <code>${env.publicUrl}/mcp</code></p>
+      <h2>Veřejná adresa</h2>
+      ${env.publicUrlFromEnv
+        ? html`<p>Penpot pro členy: <a href="${env.publicUrl}" target="_blank">${env.publicUrl}</a> <span class="muted">(nastaveno proměnnou PENPOTOS_PUBLIC_URL)</span></p>`
+        : html`<form method="post" action="/public-url" class="row">
+            ${csrfField(req.admin!.csrf)}
+            <div><label>Adresa, na které členové otevírají Penpot</label><input type="text" name="publicUrl" value="${suggestedPublicUrl(req)}" required></div>
+            <div class="shrink"><button class="primary">Uložit</button></div>
+          </form>
+          ${env.publicUrlConfigured ? "" : html`<p class="flash info">Adresa zatím není uložená – zkontroluj návrh a ulož ho.</p>`}
+          <p class="hint">Penpot funguje na jakékoli adrese serveru (LAN IP i doména z tunelu). Tato adresa se používá v odkazech (e-maily, odkazy od AI) a pro připojení Claude. Po změně restartuj jednou aplikaci v ZimaOS.</p>`}
+      <p>MCP connector pro Claude: <code>${env.publicUrl}/mcp</code> ${env.publicUrl.startsWith("https://") ? "" : html`<span class="badge err">Claude vyžaduje HTTPS (Cloudflare Tunnel)</span>`}</p>
     </div>`;
   res.send(layout({ title: "Přehled", active: "/", user: req.admin, csrf: req.admin!.csrf, flash: takeFlash(req, res) }, body));
+});
+
+miscRouter.post("/public-url", async (req, res) => {
+  try {
+    const changed = savePublicUrl(String(req.body.publicUrl ?? ""));
+    await audit({ source: "admin", actor: req.admin!.email, action: "settings.public-url", detail: { publicUrl: env.publicUrl } });
+    setFlash(res, "ok", changed ? "Adresa uložena. Restartuj jednou aplikaci PenpotOS v ZimaOS, aby ji převzal i Penpot (odkazy v e-mailech a exportech)." : "Adresa je beze změny.");
+  } catch (err: any) {
+    setFlash(res, "error", err.message);
+  }
+  res.redirect("/");
 });
 
 const SOURCES = [

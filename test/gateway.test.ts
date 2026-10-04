@@ -45,3 +45,13 @@ describe("gateway header hygiene", async () => {
     expect(h).toEqual({ authorization: "Bearer x" });
   });
 });
+
+describe("public address helpers", async () => {
+  const { normalizePublicUrl } = await import("../services/core/src/admin/setup.ts");
+  it("normalises typed addresses", () => {
+    expect(normalizePublicUrl("penpot.voluntia.cz")).toBe("https://penpot.voluntia.cz");
+    expect(normalizePublicUrl("192.168.0.98:9001")).toBe("http://192.168.0.98:9001");
+    expect(normalizePublicUrl("https://penpot.voluntia.cz/")).toBe("https://penpot.voluntia.cz");
+    expect(() => normalizePublicUrl("https://x.cz/penpot")).toThrow();
+  });
+});

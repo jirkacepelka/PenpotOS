@@ -12,6 +12,8 @@ RUN npm ci --omit=dev -w @penpotos/core && npm cache clean --force
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY services/core services/core
+# Shared config volume (generated secrets, public address) – writable by the core service.
+RUN mkdir -p /config && chown node:node /config
 WORKDIR /app/services/core
 USER node
 EXPOSE 8080 8081

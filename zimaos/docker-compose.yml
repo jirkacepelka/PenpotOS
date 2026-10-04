@@ -1,226 +1,108 @@
-# PenpotOS pro import v ZimaOS (App Store → ⊕ → Install a customized app → Import)
-#
-# PŘED INSTALACÍ uprav jen blok "x-nastaveni" níže:
-#   * každou hodnotu začínající "ZMEN-" nahraď vlastním náhodným řetězcem
-#     (např. z https://www.random.org/strings/ nebo `openssl rand -hex 32`), min. 32 znaků,
-#     bez mezer a znaků : / @ # ?
-#   * public_url = adresa, na které budou členové Penpot otevírat (doména z Cloudflare Tunnelu)
-#   * admin_email / admin_password = první administrátor
-# Ostatní části souboru neměň – hodnoty se do služeb dosadí automaticky.
-#
-# Penpot: port 9001 · Admin dashboard: port 9002
-# Image ghcr.io/jirkacepelka/penpotos-* musí být veřejné (GitHub → Packages → Change visibility).
-
+# PenpotOS – import v ZimaOS beze změn. Po instalaci otevři http://<IP>:9002 a vytvoř admina.
 name: penpotos
 
-x-nastaveni:
-  public_url: &public_url "http://zimaos.local:9001"
-  admin_email: &admin_email "admin@example.com"
-  admin_password: &admin_password "ZMEN-heslo-administratora"
-  postgres_password: &postgres_password "ZMEN-heslo-databaze-0000000000000000"
-  penpot_secret_key: &penpot_secret_key "ZMEN-penpot-secret-00000000000000000"
-  penpotos_secret_key: &penpotos_secret_key "ZMEN-penpotos-secret-000000000000000"
-  internal_token: &internal_token "ZMEN-interni-token-0000000000000000"
-  bot_name: &bot_name "Voluntia AI"
-
-x-penpotos-env: &penpotos-env
-  PENPOTOS_PUBLIC_URL: *public_url
-  PENPOTOS_SECRET_KEY: *penpotos_secret_key
-  PENPOTOS_INTERNAL_TOKEN: *internal_token
-  PENPOTOS_DATABASE_PASSWORD: *postgres_password
-  PENPOT_INTERNAL_URL: http://penpot-frontend:8080
-  PENPOT_BACKEND_URL: http://penpot-backend:6060
-  PENPOT_PREPL_HOST: penpot-backend
-  PENPOT_PREPL_PORT: "6063"
-  PENPOTOS_MCP_INTERNAL_URL: http://penpotos-mcp:4400
-  PENPOTOS_DISCORD_INTERNAL_URL: http://penpotos-discord:4500
-  PENPOTOS_BOT_EMAIL: ai@penpotos.local
-  PENPOTOS_BOT_NAME: *bot_name
+x-env: &env
+  PENPOTOS_CONFIG_DIR: /config
   TZ: Europe/Prague
+x-init: &init
+  penpotos-init: { condition: service_completed_successfully }
 
-x-penpot-common: &penpot-common
-  PENPOT_PUBLIC_URI: *public_url
-  PENPOT_HTTP_SERVER_MAX_BODY_SIZE: "367001600"
-  PENPOT_HTTP_SERVER_MAX_MULTIPART_BODY_SIZE: "367001600"
-
-networks:
-  penpot:
-
-volumes:
-  penpot_postgres_v15:
-  penpot_assets:
-  penpotos_discord:
+volumes: { config: {}, db: {}, assets: {}, discord: {} }
 
 services:
+  penpotos-init:
+    image: ghcr.io/jirkacepelka/penpotos-core:latest
+    command: ["node", "--import", "tsx", "src/init-secrets.ts"]
+    restart: "no"
+    volumes: [config:/config]
+    environment: *env
+
   penpotos-core:
     image: ghcr.io/jirkacepelka/penpotos-core:latest
-    container_name: penpotos-core
     restart: unless-stopped
-    ports:
-      - target: 8080
-        published: "9001"
-        protocol: tcp
-      - target: 8081
-        published: "9002"
-        protocol: tcp
-    depends_on:
-      penpot-postgres: { condition: service_healthy }
-      penpot-backend: { condition: service_started }
-    networks: [penpot]
-    environment:
-      <<: *penpotos-env
-      PENPOTOS_ADMIN_EMAIL: *admin_email
-      PENPOTOS_ADMIN_PASSWORD: *admin_password
-      PENPOTOS_ADMIN_NAME: Administrátor
-    x-casaos:
-      ports:
-        - container: "8080"
-          description: { en_us: Penpot (public entry point), cs_cz: Penpot (veřejný vstup) }
-        - container: "8081"
-          description: { en_us: PenpotOS admin dashboard, cs_cz: Admin dashboard PenpotOS }
+    ports: ["9001:8080", "9002:8081"]
+    depends_on: { <<: *init, penpot-postgres: { condition: service_healthy } }
+    volumes: [config:/config]
+    environment: *env
 
   penpotos-mcp:
     image: ghcr.io/jirkacepelka/penpotos-mcp:latest
-    container_name: penpotos-mcp
     restart: unless-stopped
     init: true
     shm_size: 1gb
-    depends_on:
-      penpot-postgres: { condition: service_healthy }
-      penpot-frontend: { condition: service_started }
-    networks: [penpot]
-    environment:
-      <<: *penpotos-env
+    depends_on: { <<: *init, penpot-postgres: { condition: service_healthy } }
+    volumes: [config:/config:ro]
+    environment: *env
 
   penpotos-discord:
     image: ghcr.io/jirkacepelka/penpotos-discord:latest
-    container_name: penpotos-discord
     restart: unless-stopped
-    depends_on:
-      penpot-postgres: { condition: service_healthy }
-    networks: [penpot]
-    volumes:
-      - penpotos_discord:/data
-    environment:
-      <<: *penpotos-env
-      PENPOTOS_MCP_URL: http://penpotos-mcp:4400/mcp
+    depends_on: { <<: *init, penpot-postgres: { condition: service_healthy } }
+    volumes: [config:/config:ro, discord:/data]
+    environment: *env
 
   penpot-frontend:
     image: penpotapp/frontend:2.18
-    container_name: penpot-frontend
     restart: unless-stopped
-    volumes:
-      - penpot_assets:/opt/data/assets
+    volumes: [assets:/opt/data/assets]
     depends_on: [penpot-backend, penpot-exporter]
-    networks: [penpot]
     environment:
-      <<: *penpot-common
       PENPOT_FLAGS: disable-registration enable-login-with-password disable-onboarding enable-plugins
-      # Pokud se kontejner restartuje s chybou "Address family not supported", změň hodnotu na: "#"
-      PENPOT_IPV6_LISTEN_DIRECTIVE: "listen [::]:8080 default_server reuseport backlog=16384;"
+      PENPOT_IPV6_LISTEN_DIRECTIVE: "#"
+      PENPOT_HTTP_SERVER_MAX_BODY_SIZE: "367001600"
+      PENPOT_HTTP_SERVER_MAX_MULTIPART_BODY_SIZE: "367001600"
 
   penpot-backend:
     image: penpotapp/backend:2.18
-    container_name: penpot-backend
     restart: unless-stopped
-    volumes:
-      - penpot_assets:/opt/data/assets
-    depends_on:
-      penpot-postgres: { condition: service_healthy }
-      penpot-valkey: { condition: service_healthy }
-    networks: [penpot]
+    command: ["/bin/bash", "/config/run-backend.sh"]
+    volumes: [assets:/opt/data/assets, config:/config:ro]
+    depends_on: { <<: *init, penpot-postgres: { condition: service_healthy }, penpot-valkey: { condition: service_started } }
     environment:
-      <<: *penpot-common
       PENPOT_FLAGS: disable-registration enable-login-with-password enable-prepl-server disable-email-verification enable-access-tokens disable-onboarding disable-secure-session-cookies
       PENPOT_PREPL_HOST: 0.0.0.0
-      PENPOT_SECRET_KEY: *penpot_secret_key
       PENPOT_DATABASE_URI: postgresql://penpot-postgres/penpot
       PENPOT_DATABASE_USERNAME: penpot
-      PENPOT_DATABASE_PASSWORD: *postgres_password
       PENPOT_REDIS_URI: redis://penpot-valkey/0
       PENPOT_OBJECTS_STORAGE_BACKEND: fs
       PENPOT_OBJECTS_STORAGE_FS_DIRECTORY: /opt/data/assets
       PENPOT_TELEMETRY_ENABLED: "false"
+      PENPOT_HTTP_SERVER_MAX_BODY_SIZE: "367001600"
+      PENPOT_HTTP_SERVER_MAX_MULTIPART_BODY_SIZE: "367001600"
 
   penpot-exporter:
     image: penpotapp/exporter:2.18
-    container_name: penpot-exporter
     restart: unless-stopped
-    depends_on:
-      penpot-valkey: { condition: service_healthy }
-    networks: [penpot]
+    command: ["/bin/bash", "/config/run-exporter.sh"]
+    volumes: [config:/config:ro]
+    depends_on: { <<: *init, penpot-valkey: { condition: service_started } }
     environment:
-      <<: *penpot-common
-      PENPOT_SECRET_KEY: *penpot_secret_key
       PENPOT_INTERNAL_URI: http://penpot-frontend:8080
       PENPOT_REDIS_URI: redis://penpot-valkey/0
 
   penpot-postgres:
     image: postgres:15
-    container_name: penpot-postgres
     restart: unless-stopped
     stop_signal: SIGINT
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U penpot"]
-      interval: 2s
-      timeout: 10s
-      retries: 10
-      start_period: 5s
-    volumes:
-      - penpot_postgres_v15:/var/lib/postgresql/data
-    networks: [penpot]
+    depends_on: *init
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U penpot"], interval: 2s, retries: 30 }
+    volumes: [db:/var/lib/postgresql/data, config:/config:ro]
     environment:
-      POSTGRES_INITDB_ARGS: --data-checksums
       POSTGRES_DB: penpot
       POSTGRES_USER: penpot
-      POSTGRES_PASSWORD: *postgres_password
+      POSTGRES_PASSWORD_FILE: /config/postgres_password
 
   penpot-valkey:
     image: valkey/valkey:8.1
-    container_name: penpot-valkey
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "valkey-cli ping | grep PONG"]
-      interval: 1s
-      timeout: 3s
-      retries: 5
-      start_period: 3s
-    networks: [penpot]
-    environment:
-      VALKEY_EXTRA_FLAGS: --maxmemory 128mb --maxmemory-policy volatile-lfu
-
-  # Přístup z internetu: nejjednodušší je nainstalovat aplikaci "Cloudflared" z App Store ZimaOS
-  # a v Cloudflare Zero Trust nasměrovat hostname na http://<IP-ZimaOS>:9001.
-  # Alternativně odkomentuj tuto službu, vlož token tunelu a hostname nasměruj na http://penpotos-core:8080.
-  # cloudflared:
-  #   image: cloudflare/cloudflared:latest
-  #   container_name: penpotos-cloudflared
-  #   restart: unless-stopped
-  #   command: tunnel --no-autoupdate run
-  #   environment:
-  #     TUNNEL_TOKEN: "ZMEN-token-cloudflare-tunelu"
-  #   networks: [penpot]
-  #   depends_on: [penpotos-core]
 
 x-casaos:
-  architectures: [amd64, arm64]
   main: penpotos-core
-  author: Libertariánská strana Voluntia
-  developer: PenpotOS
-  category: Design
-  description:
-    en_us: Self-hosted Penpot with an admin dashboard, an online MCP server for AI (Claude) and a Discord bot.
-    cs_cz: Self-hostovaný Penpot s admin dashboardem, online MCP serverem pro AI (Claude) a Discord botem.
-  tagline:
-    en_us: Penpot for teams, with AI
-    cs_cz: Penpot pro týmy, s AI
-  title:
-    en_us: PenpotOS
-  icon: https://raw.githubusercontent.com/penpot/penpot/develop/frontend/resources/images/favicon.png
   port_map: "9001"
-  index: /
   scheme: http
-  tips:
-    before_install:
-      cs_cz: Před instalací nahraď v bloku x-nastaveni všechny hodnoty začínající "ZMEN-" a nastav public_url.
-      en_us: Before installing, replace every value starting with "ZMEN-" in the x-nastaveni block and set public_url.
+  index: /
+  category: Design
+  author: Libertariánská strana Voluntia
+  title: { en_us: PenpotOS }
+  tagline: { en_us: Penpot pro týmy, s AI }
+  icon: https://raw.githubusercontent.com/penpot/penpot/develop/frontend/resources/images/favicon.png

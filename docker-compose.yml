@@ -9,21 +9,15 @@
 
 name: penpotos
 
+# Secrets left empty in .env are generated on the first start by penpotos-init
+# (volume penpotos_config); values set in .env take precedence.
 x-penpot-common: &penpot-common
-  PENPOT_PUBLIC_URI: ${PENPOTOS_PUBLIC_URL:-http://localhost:9001}
   PENPOT_HTTP_SERVER_MAX_BODY_SIZE: 367001600
   PENPOT_HTTP_SERVER_MAX_MULTIPART_BODY_SIZE: 367001600
 
-x-penpot-db: &penpot-db
-  PENPOT_DATABASE_URI: postgresql://penpot-postgres/penpot
-  PENPOT_DATABASE_USERNAME: penpot
-  PENPOT_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
-
 x-penpotos-env: &penpotos-env
-  PENPOTOS_PUBLIC_URL: ${PENPOTOS_PUBLIC_URL:-http://localhost:9001}
-  PENPOTOS_SECRET_KEY: ${PENPOTOS_SECRET_KEY:?set PENPOTOS_SECRET_KEY in .env}
-  PENPOTOS_INTERNAL_TOKEN: ${PENPOTOS_INTERNAL_TOKEN:?set PENPOTOS_INTERNAL_TOKEN in .env}
-  PENPOTOS_DATABASE_URL: postgresql://penpot:${POSTGRES_PASSWORD}@penpot-postgres:5432/penpot
+  PENPOTOS_CONFIG_DIR: /config
+  PENPOTOS_PUBLIC_URL: ${PENPOTOS_PUBLIC_URL:-}
   PENPOT_INTERNAL_URL: http://penpot-frontend:8080
   PENPOT_BACKEND_URL: http://penpot-backend:6060
   PENPOT_PREPL_HOST: penpot-backend
@@ -39,12 +33,28 @@ networks:
   penpot:
 
 volumes:
+  penpotos_config:
   penpot_postgres_v15:
   penpot_assets:
   penpotos_discord:
 
 services:
   # ---------------------------------------------------------------- PenpotOS
+  # Generates missing secrets and the Penpot start scripts into the config volume (runs once per start).
+  penpotos-init:
+    image: ghcr.io/jirkacepelka/penpotos-core:${PENPOTOS_VERSION:-latest}
+    build: { context: ., dockerfile: services/core/Dockerfile }
+    restart: "no"
+    command: ["node", "--import", "tsx", "src/init-secrets.ts"]
+    volumes:
+      - penpotos_config:/config
+    environment:
+      PENPOTOS_CONFIG_DIR: /config
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      PENPOT_SECRET_KEY: ${PENPOT_SECRET_KEY:-}
+      PENPOTOS_SECRET_KEY: ${PENPOTOS_SECRET_KEY:-}
+      PENPOTOS_INTERNAL_TOKEN: ${PENPOTOS_INTERNAL_TOKEN:-}
+
   penpotos-core:
     image: ghcr.io/jirkacepelka/penpotos-core:${PENPOTOS_VERSION:-latest}
     build: { context: ., dockerfile: services/core/Dockerfile }
@@ -53,9 +63,12 @@ services:
       - ${PENPOTOS_GATEWAY_PORT:-9001}:8080
       - ${PENPOTOS_ADMIN_BIND:-0.0.0.0}:${PENPOTOS_ADMIN_PORT:-9002}:8081
     depends_on:
+      penpotos-init: { condition: service_completed_successfully }
       penpot-postgres: { condition: service_healthy }
       penpot-backend: { condition: service_started }
     networks: [penpot]
+    volumes:
+      - penpotos_config:/config
     environment:
       <<: *penpotos-env
       PENPOTOS_ADMIN_EMAIL: ${PENPOTOS_ADMIN_EMAIL:-}
@@ -69,9 +82,12 @@ services:
     init: true
     shm_size: 1gb
     depends_on:
+      penpotos-init: { condition: service_completed_successfully }
       penpot-postgres: { condition: service_healthy }
       penpot-frontend: { condition: service_started }
     networks: [penpot]
+    volumes:
+      - penpotos_config:/config:ro
     environment:
       <<: *penpotos-env
 
@@ -80,9 +96,11 @@ services:
     build: { context: ., dockerfile: services/discord/Dockerfile }
     restart: always
     depends_on:
+      penpotos-init: { condition: service_completed_successfully }
       penpot-postgres: { condition: service_healthy }
     networks: [penpot]
     volumes:
+      - penpotos_config:/config:ro
       - penpotos_discord:/data
     environment:
       <<: *penpotos-env
@@ -112,24 +130,29 @@ services:
       <<: *penpot-common
       # Registration UI hidden; accounts are created in the PenpotOS admin dashboard.
       PENPOT_FLAGS: disable-registration enable-login-with-password disable-onboarding enable-plugins ${PENPOT_EXTRA_FLAGS:-}
-      # Hosts without IPv6 (nginx fails with "Address family not supported"): set PENPOT_IPV6_LISTEN_DIRECTIVE=# in .env
-      PENPOT_IPV6_LISTEN_DIRECTIVE: ${PENPOT_IPV6_LISTEN_DIRECTIVE:-listen [::]:8080 default_server reuseport backlog=16384;}
+      # Only reached internally over IPv4 (through penpotos-core); IPv6 listen fails on hosts without IPv6.
+      PENPOT_IPV6_LISTEN_DIRECTIVE: "#"
 
   penpot-backend:
     image: penpotapp/backend:${PENPOT_VERSION:-2.18}
     restart: always
+    command: ["/bin/bash", "/config/run-backend.sh"]
     volumes:
       - penpot_assets:/opt/data/assets
+      - penpotos_config:/config:ro
     depends_on:
+      penpotos-init: { condition: service_completed_successfully }
       penpot-postgres: { condition: service_healthy }
       penpot-valkey: { condition: service_healthy }
     networks: [penpot]
     environment:
-      <<: [*penpot-common, *penpot-db]
+      <<: *penpot-common
+      PENPOT_DATABASE_URI: postgresql://penpot-postgres/penpot
+      PENPOT_DATABASE_USERNAME: penpot
       # prepl-server: account management API used by PenpotOS (reachable only inside this network)
       PENPOT_FLAGS: disable-registration enable-login-with-password enable-prepl-server disable-email-verification enable-access-tokens disable-onboarding ${PENPOT_SESSION_COOKIE_FLAG:-disable-secure-session-cookies} ${PENPOT_EXTRA_FLAGS:-}
       PENPOT_PREPL_HOST: 0.0.0.0
-      PENPOT_SECRET_KEY: ${PENPOT_SECRET_KEY:?set PENPOT_SECRET_KEY in .env}
+      PENPOT_PUBLIC_URI: ${PENPOTOS_PUBLIC_URL:-}
       PENPOT_REDIS_URI: redis://penpot-valkey/0
       PENPOT_OBJECTS_STORAGE_BACKEND: fs
       PENPOT_OBJECTS_STORAGE_FS_DIRECTORY: /opt/data/assets
@@ -145,12 +168,16 @@ services:
   penpot-exporter:
     image: penpotapp/exporter:${PENPOT_VERSION:-2.18}
     restart: always
+    command: ["/bin/bash", "/config/run-exporter.sh"]
+    volumes:
+      - penpotos_config:/config:ro
     depends_on:
+      penpotos-init: { condition: service_completed_successfully }
       penpot-valkey: { condition: service_healthy }
     networks: [penpot]
     environment:
       <<: *penpot-common
-      PENPOT_SECRET_KEY: ${PENPOT_SECRET_KEY}
+      PENPOT_PUBLIC_URI: ${PENPOTOS_PUBLIC_URL:-}
       PENPOT_INTERNAL_URI: http://penpot-frontend:8080
       PENPOT_REDIS_URI: redis://penpot-valkey/0
 
@@ -164,14 +191,17 @@ services:
       timeout: 10s
       retries: 10
       start_period: 5s
+    depends_on:
+      penpotos-init: { condition: service_completed_successfully }
     volumes:
       - penpot_postgres_v15:/var/lib/postgresql/data
+      - penpotos_config:/config:ro
     networks: [penpot]
     environment:
       POSTGRES_INITDB_ARGS: --data-checksums
       POSTGRES_DB: penpot
       POSTGRES_USER: penpot
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD_FILE: /config/postgres_password
 
   penpot-valkey:
     image: valkey/valkey:8.1

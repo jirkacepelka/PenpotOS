@@ -5,7 +5,7 @@ describe("startup diagnostics", () => {
   it("explains a database password mismatch", () => {
     const err = Object.assign(new Error('password authentication failed for user "penpot"'), { code: "28P01" });
     expect(describeStartupError(err).title).toMatch(/Heslo databáze/);
-    expect(describeStartupError(err).hint).toMatch(/penpotos_penpot_postgres_v15/);
+    expect(describeStartupError(err).hint).toMatch(/volum/);
   });
 
   it("explains PREPL and connection problems", () => {
