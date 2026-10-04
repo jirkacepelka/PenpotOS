@@ -6,7 +6,7 @@ import path from "node:path";
  * Every value has a default matching the bundled docker-compose.yml.
  *
  * Secrets and the public URL can also come from files in the shared config
- * volume (PENPOTOS_CONFIG_DIR, default /config) – written by `penpotos-init`
+ * volume (PENPOTOS_CONFIG_DIR, default /config) – written by penpotos-core
  * and the admin dashboard – so the compose file needs no hand-edited values.
  */
 
@@ -31,7 +31,7 @@ export function readConfigFile(name: string, maxAgeMs = 5_000): string | undefin
   } catch {
     value = undefined;
   }
-  // Only found values are cached, so a file written later (penpotos-init) is picked up at once.
+  // Only found values are cached, so a file written later is picked up at once.
   if (value !== undefined) fileCache.set(name, { at: Date.now(), value });
   return value;
 }

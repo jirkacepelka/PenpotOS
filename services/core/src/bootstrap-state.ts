@@ -85,8 +85,8 @@ export function describeStartupError(err: unknown): StartupProblem {
     return {
       title: "Nedaří se spojit s databází nebo Penpotem",
       hint:
-        "Kontejnery penpot-postgres / penpot-backend možná ještě startují, nebo neběží. Zkontroluj jejich stav v ZimaOS. " +
-        "Pokud neběží vůbec, podívej se do logu kontejneru penpotos-init (připravuje jim hesla) – po aktualizaci obvykle pomůže aplikaci odinstalovat a znovu naimportovat, aby se stáhly nové image.",
+        "Kontejnery penpot-postgres / penpot-backend ještě startují (první start trvá 1–3 minuty), nebo neběží. " +
+        "Pokud to trvá déle, zkontroluj v ZimaOS, že u aplikace běží všechny kontejnery, a případně aplikaci restartuj.",
       detail,
     };
   }

@@ -7,7 +7,7 @@ Doporučené minimum: 4 GB RAM, 2 CPU.
 1. Stáhni [`zimaos/docker-compose.yml`](https://raw.githubusercontent.com/jirkacepelka/PenpotOS/main/zimaos/docker-compose.yml).
 2. ZimaOS → **App Store → ⊕ → Install a customized app → Import** → vlož soubor **beze změn** → Install.
 
-Hesla a klíče si PenpotOS při prvním startu vygeneruje sám (služba `penpotos-init`, volume `config`). V YAMLu se nic nevyplňuje.
+Hesla a klíče si PenpotOS při prvním startu vygeneruje sám (kontejner `penpotos-core`, volume `config`). V YAMLu se nic nevyplňuje.
 
 ## 2. První spuštění v prohlížeči
 
