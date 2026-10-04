@@ -177,7 +177,8 @@ services:
     networks: [penpot]
     environment:
       <<: *penpot-common
-      PENPOT_PUBLIC_URI: ${PENPOTOS_PUBLIC_URL:-}
+      # The exporter renders pages itself – always through the internal frontend.
+      PENPOT_PUBLIC_URI: http://penpot-frontend:8080
       PENPOT_INTERNAL_URI: http://penpot-frontend:8080
       PENPOT_REDIS_URI: redis://penpot-valkey/0
 
