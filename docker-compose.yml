@@ -1,0 +1,205 @@
+# PenpotOS – self-hosted Penpot for teams (admin dashboard, headless online MCP, Discord AI bot)
+#
+# 1. cp .env.example .env  and fill in the values (at least the secrets and PENPOTOS_PUBLIC_URL)
+# 2. docker compose up -d                      (LAN only)
+#    docker compose --profile tunnel up -d     (with Cloudflare Tunnel for access from the internet)
+#
+# Public entry point (Penpot + MCP):  port ${PENPOTOS_GATEWAY_PORT:-9001}
+# Admin dashboard (keep it on the LAN): port ${PENPOTOS_ADMIN_PORT:-9002}
+
+name: penpotos
+
+x-penpot-common: &penpot-common
+  PENPOT_PUBLIC_URI: ${PENPOTOS_PUBLIC_URL:-http://localhost:9001}
+  PENPOT_HTTP_SERVER_MAX_BODY_SIZE: 367001600
+  PENPOT_HTTP_SERVER_MAX_MULTIPART_BODY_SIZE: 367001600
+
+x-penpot-db: &penpot-db
+  PENPOT_DATABASE_URI: postgresql://penpot-postgres/penpot
+  PENPOT_DATABASE_USERNAME: penpot
+  PENPOT_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+
+x-penpotos-env: &penpotos-env
+  PENPOTOS_PUBLIC_URL: ${PENPOTOS_PUBLIC_URL:-http://localhost:9001}
+  PENPOTOS_SECRET_KEY: ${PENPOTOS_SECRET_KEY:?set PENPOTOS_SECRET_KEY in .env}
+  PENPOTOS_INTERNAL_TOKEN: ${PENPOTOS_INTERNAL_TOKEN:?set PENPOTOS_INTERNAL_TOKEN in .env}
+  PENPOTOS_DATABASE_URL: postgresql://penpot:${POSTGRES_PASSWORD}@penpot-postgres:5432/penpot
+  PENPOT_INTERNAL_URL: http://penpot-frontend:8080
+  PENPOT_BACKEND_URL: http://penpot-backend:6060
+  PENPOT_PREPL_HOST: penpot-backend
+  PENPOT_PREPL_PORT: 6063
+  PENPOTOS_MCP_INTERNAL_URL: http://penpotos-mcp:4400
+  PENPOTOS_DISCORD_INTERNAL_URL: http://penpotos-discord:4500
+  PENPOTOS_BOT_EMAIL: ${PENPOTOS_BOT_EMAIL:-ai@penpotos.local}
+  PENPOTOS_BOT_NAME: ${PENPOTOS_BOT_NAME:-Voluntia AI}
+  TZ: ${TZ:-Europe/Prague}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+
+networks:
+  penpot:
+
+volumes:
+  penpot_postgres_v15:
+  penpot_assets:
+  penpotos_discord:
+
+services:
+  # ---------------------------------------------------------------- PenpotOS
+  penpotos-core:
+    image: ghcr.io/jirkacepelka/penpotos-core:${PENPOTOS_VERSION:-latest}
+    build: { context: ., dockerfile: services/core/Dockerfile }
+    restart: always
+    ports:
+      - ${PENPOTOS_GATEWAY_PORT:-9001}:8080
+      - ${PENPOTOS_ADMIN_BIND:-0.0.0.0}:${PENPOTOS_ADMIN_PORT:-9002}:8081
+    depends_on:
+      penpot-postgres: { condition: service_healthy }
+      penpot-backend: { condition: service_started }
+    networks: [penpot]
+    environment:
+      <<: *penpotos-env
+      PENPOTOS_ADMIN_EMAIL: ${PENPOTOS_ADMIN_EMAIL:-}
+      PENPOTOS_ADMIN_PASSWORD: ${PENPOTOS_ADMIN_PASSWORD:-}
+      PENPOTOS_ADMIN_NAME: ${PENPOTOS_ADMIN_NAME:-Administrátor}
+
+  penpotos-mcp:
+    image: ghcr.io/jirkacepelka/penpotos-mcp:${PENPOTOS_VERSION:-latest}
+    build: { context: ., dockerfile: services/mcp/Dockerfile }
+    restart: always
+    init: true
+    shm_size: 1gb
+    depends_on:
+      penpot-postgres: { condition: service_healthy }
+      penpot-frontend: { condition: service_started }
+    networks: [penpot]
+    environment:
+      <<: *penpotos-env
+
+  penpotos-discord:
+    image: ghcr.io/jirkacepelka/penpotos-discord:${PENPOTOS_VERSION:-latest}
+    build: { context: ., dockerfile: services/discord/Dockerfile }
+    restart: always
+    depends_on:
+      penpot-postgres: { condition: service_healthy }
+    networks: [penpot]
+    volumes:
+      - penpotos_discord:/data
+    environment:
+      <<: *penpotos-env
+      PENPOTOS_MCP_URL: http://penpotos-mcp:4400/mcp
+
+  # Optional: exposes the gateway to the internet through a Cloudflare Tunnel.
+  # In Cloudflare Zero Trust, point the tunnel's public hostname to http://penpotos-core:8080
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: [tunnel]
+    restart: always
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    networks: [penpot]
+    depends_on: [penpotos-core]
+
+  # ---------------------------------------------------------------- Penpot
+  penpot-frontend:
+    image: penpotapp/frontend:${PENPOT_VERSION:-2.18}
+    restart: always
+    volumes:
+      - penpot_assets:/opt/data/assets
+    depends_on: [penpot-backend, penpot-exporter]
+    networks: [penpot]
+    environment:
+      <<: *penpot-common
+      # Registration UI hidden; accounts are created in the PenpotOS admin dashboard.
+      PENPOT_FLAGS: disable-registration enable-login-with-password disable-onboarding enable-plugins ${PENPOT_EXTRA_FLAGS:-}
+      # Hosts without IPv6 (nginx fails with "Address family not supported"): set PENPOT_IPV6_LISTEN_DIRECTIVE=# in .env
+      PENPOT_IPV6_LISTEN_DIRECTIVE: ${PENPOT_IPV6_LISTEN_DIRECTIVE:-listen [::]:8080 default_server reuseport backlog=16384;}
+
+  penpot-backend:
+    image: penpotapp/backend:${PENPOT_VERSION:-2.18}
+    restart: always
+    volumes:
+      - penpot_assets:/opt/data/assets
+    depends_on:
+      penpot-postgres: { condition: service_healthy }
+      penpot-valkey: { condition: service_healthy }
+    networks: [penpot]
+    environment:
+      <<: [*penpot-common, *penpot-db]
+      # prepl-server: account management API used by PenpotOS (reachable only inside this network)
+      PENPOT_FLAGS: disable-registration enable-login-with-password enable-prepl-server disable-email-verification enable-access-tokens disable-onboarding ${PENPOT_SESSION_COOKIE_FLAG:-disable-secure-session-cookies} ${PENPOT_EXTRA_FLAGS:-}
+      PENPOT_PREPL_HOST: 0.0.0.0
+      PENPOT_SECRET_KEY: ${PENPOT_SECRET_KEY:?set PENPOT_SECRET_KEY in .env}
+      PENPOT_REDIS_URI: redis://penpot-valkey/0
+      PENPOT_OBJECTS_STORAGE_BACKEND: fs
+      PENPOT_OBJECTS_STORAGE_FS_DIRECTORY: /opt/data/assets
+      PENPOT_TELEMETRY_ENABLED: "false"
+      PENPOT_SMTP_DEFAULT_FROM: ${PENPOT_SMTP_DEFAULT_FROM:-no-reply@example.com}
+      PENPOT_SMTP_DEFAULT_REPLY_TO: ${PENPOT_SMTP_DEFAULT_FROM:-no-reply@example.com}
+      PENPOT_SMTP_HOST: ${PENPOT_SMTP_HOST:-}
+      PENPOT_SMTP_PORT: ${PENPOT_SMTP_PORT:-587}
+      PENPOT_SMTP_USERNAME: ${PENPOT_SMTP_USERNAME:-}
+      PENPOT_SMTP_PASSWORD: ${PENPOT_SMTP_PASSWORD:-}
+      PENPOT_SMTP_TLS: ${PENPOT_SMTP_TLS:-true}
+
+  penpot-exporter:
+    image: penpotapp/exporter:${PENPOT_VERSION:-2.18}
+    restart: always
+    depends_on:
+      penpot-valkey: { condition: service_healthy }
+    networks: [penpot]
+    environment:
+      <<: *penpot-common
+      PENPOT_SECRET_KEY: ${PENPOT_SECRET_KEY}
+      PENPOT_INTERNAL_URI: http://penpot-frontend:8080
+      PENPOT_REDIS_URI: redis://penpot-valkey/0
+
+  penpot-postgres:
+    image: postgres:15
+    restart: always
+    stop_signal: SIGINT
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U penpot"]
+      interval: 2s
+      timeout: 10s
+      retries: 10
+      start_period: 5s
+    volumes:
+      - penpot_postgres_v15:/var/lib/postgresql/data
+    networks: [penpot]
+    environment:
+      POSTGRES_INITDB_ARGS: --data-checksums
+      POSTGRES_DB: penpot
+      POSTGRES_USER: penpot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+  penpot-valkey:
+    image: valkey/valkey:8.1
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli ping | grep PONG"]
+      interval: 1s
+      timeout: 3s
+      retries: 5
+      start_period: 3s
+    networks: [penpot]
+    environment:
+      VALKEY_EXTRA_FLAGS: --maxmemory 128mb --maxmemory-policy volatile-lfu
+
+x-casaos:
+  architectures: [amd64, arm64]
+  main: penpotos-core
+  author: Libertariánská strana Voluntia
+  category: Design
+  description:
+    en_us: Self-hosted Penpot with an admin dashboard, an online MCP server for AI (Claude) and a Discord bot.
+    cs_cz: Self-hostovaný Penpot s admin dashboardem, online MCP serverem pro AI (Claude) a Discord botem.
+  tagline:
+    en_us: Penpot for teams, with AI
+    cs_cz: Penpot pro týmy, s AI
+  title:
+    en_us: PenpotOS
+  icon: https://raw.githubusercontent.com/penpot/penpot/develop/frontend/resources/images/favicon.png
+  port_map: "9001"
+  index: /
+  scheme: http

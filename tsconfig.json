@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.base.json",
+  "include": ["packages/*/src", "services/*/src", "services/*/test", "packages/*/test"],
+  "exclude": ["services/mcp/src/runtime"]
+}

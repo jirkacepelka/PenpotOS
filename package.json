@@ -1,0 +1,32 @@
+{
+  "name": "penpotos",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Self-hosted Penpot for teams: admin dashboard, headless online MCP and Discord AI bot",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "dev:core": "npm run dev -w @penpotos/core",
+    "dev:mcp": "npm run dev -w @penpotos/mcp",
+    "dev:discord": "npm run dev -w @penpotos/discord"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MPL-2.0",
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
+    "@types/express": "^5.0.6",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.3"
+  }
+}
