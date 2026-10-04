@@ -1,0 +1,21 @@
+{
+  "name": "@penpotos/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.0",
+    "@penpot/plugin-types": "^1.4.2",
+    "@penpotos/shared": "0.1.0",
+    "esbuild": "^0.28.2",
+    "express": "^5.2.1",
+    "js-yaml": "^4.1.0",
+    "playwright": "^1.63.0",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.5"
+  }
+}
