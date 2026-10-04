@@ -84,7 +84,9 @@ export function describeStartupError(err: unknown): StartupProblem {
   if (code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "EAI_AGAIN" || /ECONNREFUSED|ENOTFOUND|getaddrinfo/.test(detail)) {
     return {
       title: "Nedaří se spojit s databází nebo Penpotem",
-      hint: "Kontejnery penpot-postgres / penpot-backend možná ještě startují, nebo neběží. Zkontroluj jejich stav a logy v ZimaOS.",
+      hint:
+        "Kontejnery penpot-postgres / penpot-backend možná ještě startují, nebo neběží. Zkontroluj jejich stav v ZimaOS. " +
+        "Pokud neběží vůbec, podívej se do logu kontejneru penpotos-init (připravuje jim hesla) – po aktualizaci obvykle pomůže aplikaci odinstalovat a znovu naimportovat, aby se stáhly nové image.",
       detail,
     };
   }

@@ -62,10 +62,7 @@ services:
     ports:
       - ${PENPOTOS_GATEWAY_PORT:-9001}:8080
       - ${PENPOTOS_ADMIN_BIND:-0.0.0.0}:${PENPOTOS_ADMIN_PORT:-9002}:8081
-    depends_on:
-      penpotos-init: { condition: service_completed_successfully }
-      penpot-postgres: { condition: service_healthy }
-      penpot-backend: { condition: service_started }
+    # No depends_on: core always starts and shows a status page while the rest is not ready.
     networks: [penpot]
     volumes:
       - penpotos_config:/config

@@ -21,7 +21,6 @@ services:
     image: ghcr.io/jirkacepelka/penpotos-core:latest
     restart: unless-stopped
     ports: ["9001:8080", "9002:8081"]
-    depends_on: { <<: *init, penpot-postgres: { condition: service_healthy } }
     volumes: [config:/config]
     environment: *env
 

@@ -2,6 +2,7 @@ import { configDir, createLogger, env, migrate, waitForDatabase } from "@penpoto
 import { startAdmin } from "./admin/server.ts";
 import { ConfigError, bootstrapState, markAttempt, markError, markReady } from "./bootstrap-state.ts";
 import { startGateway } from "./gateway.ts";
+import { initConfigDir } from "./init-secrets.ts";
 import { adoptExistingProfiles, ensureBootstrapAdmin, ensureBotAccount } from "./members.ts";
 import { startSyncLoop } from "./sync.ts";
 
@@ -23,7 +24,20 @@ function checkConfig() {
   }
 }
 
+/** Same as the penpotos-init service – core does not depend on it, so it always starts. */
+function prepareConfig() {
+  try {
+    initConfigDir(configDir());
+  } catch (err: any) {
+    throw new ConfigError(
+      `Nelze zapsat konfiguraci do ${configDir()}`,
+      `Kontejner penpotos-core potřebuje zapisovatelný volume připojený do ${configDir()} (${err?.message ?? err}).`,
+    );
+  }
+}
+
 async function bootstrapOnce() {
+  if (!env.secretKey || !env.internalToken) prepareConfig();
   checkConfig();
   await waitForDatabase(20_000);
   await migrate();
