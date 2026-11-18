@@ -390,8 +390,9 @@ export async function createMcpServer(caller: Caller): Promise<McpServer> {
       title: "Export shape",
       description:
         "Exports a shape (or a shape's image fill) from the Penpot design to a PNG or SVG image, such that you can get an impression of what it looks like. " +
-        "Set download=true to also get a download link for the user (e.g. the finished graphic) – share that link in your reply; " +
-        "use scale 2–4 for a sharper result.",
+        "The image you receive is a preview limited to previewSize px (default 800) to save tokens – ask for a larger previewSize only " +
+        "when you must read small details. Set download=true to also get a full-resolution download link for the user (the finished graphic) – " +
+        "share that link in your reply; scale sets the resolution of the download (2 = sharp).",
       inputSchema: {
         fileId: fileIdSchema,
         shapeId: z
@@ -405,11 +406,12 @@ export async function createMcpServer(caller: Caller): Promise<McpServer> {
           .describe("'shape' (full shape including descendants; default) or 'fill' (raw image used as the shape's fill; PNG only)."),
         pageId: pageIdSchema,
         download: z.boolean().default(false).describe("Also store the image and return a download link (valid 7 days) to share with the user."),
-        scale: z.number().min(0.25).max(4).optional().describe("PNG resolution multiplier (default 1; 2 = retina/print quality)."),
+        scale: z.number().min(0.25).max(4).optional().describe("Resolution multiplier of the download (default 1; 2 = retina/print quality)."),
+        previewSize: z.number().int().min(200).max(2000).default(800).describe("Longest side of the preview image in px."),
       },
       readOnly: true,
     },
-    async ({ fileId, shapeId, format, mode, pageId, download, scale }) => {
+    async ({ fileId, shapeId, format, mode, pageId, download, scale, previewSize }) => {
       // Penpot's exporter cannot render the page root itself, so "page" exports its top-level shapes.
       const targets =
         shapeId === "page"
@@ -419,27 +421,34 @@ export async function createMcpServer(caller: Caller): Promise<McpServer> {
             : `[penpotUtils.findShapeById(${JSON.stringify(shapeId)})].filter(Boolean)`;
       const code = `const shapes = ${targets};
         if (!shapes.length) throw new Error(${JSON.stringify(shapeId === "page" ? "The page is empty" : `Shape not found: ${shapeId}`)});
+        const b64 = (bytes) => { let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(bin); };
         const out = [];
+        await new Promise((r) => setTimeout(r, 200)); // let pending updates render
         for (const s of shapes) {
-          const bytes = ${
-            scale && scale !== 1 && mode === "shape" && format === "png"
-              ? `(await new Promise((r) => setTimeout(r, 200)), await s.export({ type: "png", scale: ${Number(scale)} }))`
-              : `await penpotUtils.exportImage(s, ${JSON.stringify(mode)}, ${format === "svg"})`
-          };
-          let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-          out.push({ id: s.id, name: s.name, data: btoa(bin) });
+          ${
+            mode === "shape" && format === "png"
+              ? `const previewScale = Math.min(1, ${previewSize} / Math.max(s.width || 1, s.height || 1));
+          const preview = await s.export({ type: "png", scale: previewScale });
+          const full = ${download ? `await s.export({ type: "png", scale: ${Number(scale ?? 1)} })` : "null"};
+          out.push({ id: s.id, name: s.name, data: b64(preview), full: full ? b64(full) : null });`
+              : `const bytes = await penpotUtils.exportImage(s, ${JSON.stringify(mode)}, ${format === "svg"});
+          out.push({ id: s.id, name: s.name, data: b64(bytes), full: null });`
+          }
         }
         return out;`;
       const outcome = await browserPool.exec(fileId, code, { storageKey: caller.storageKey, pageId, timeoutMs });
       if (!outcome.ok) return execResult(outcome);
-      const exported = outcome.result as { id: string; name: string; data: string }[];
+      const exported = outcome.result as { id: string; name: string; data: string; full: string | null }[];
       const content: any[] = [];
       if (shapeId === "page") content.push({ type: "text", text: `Exported top-level shapes: ${exported.map((e) => `${e.name} (${e.id})`).join(", ")}` });
       const links: string[] = [];
       for (const e of exported) {
         const bytes = Buffer.from(e.data, "base64");
         const mimeType = format === "svg" ? "image/svg+xml" : detectMime(bytes);
-        if (download) links.push(`${e.name}: ${storeDownload(bytes, mimeType, e.name)}`);
+        if (download) {
+          const fullBytes = e.full ? Buffer.from(e.full, "base64") : bytes;
+          links.push(`${e.name}: ${storeDownload(fullBytes, format === "svg" ? mimeType : detectMime(fullBytes), e.name)}`);
+        }
         if (format === "svg") {
           // The SVG source is only useful to the model when no download was requested.
           if (!download) content.push({ type: "text", text: bytes.toString("utf8") });

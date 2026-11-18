@@ -115,7 +115,7 @@ export class BrowserPool {
   private lastWriteEnabled?: boolean;
 
   constructor() {
-    setInterval(() => this.reapIdle().catch(() => {}), 60_000).unref();
+    setInterval(() => this.reapIdle().catch(() => {}), 20_000).unref();
   }
 
   status() {
@@ -160,7 +160,7 @@ export class BrowserPool {
         });
         const context = await this.browser.newContext({
           bypassCSP: true,
-          viewport: { width: 1600, height: 1000 },
+          viewport: { width: 1024, height: 640 },
           locale: "cs-CZ",
           timezoneId: "Europe/Prague",
         });
@@ -479,7 +479,7 @@ export class BrowserPool {
   /** Gives the workspace keyboard focus with a click on an empty spot of the canvas. */
   private async focusCanvas(session: FileSession) {
     await session.page.bringToFront();
-    const vp = session.page.viewportSize() ?? { width: 1600, height: 1000 };
+    const vp = session.page.viewportSize() ?? { width: 1024, height: 640 };
     await session.page.mouse.click(Math.round(vp.width * 0.55), vp.height - 60);
   }
 
@@ -508,7 +508,7 @@ export class BrowserPool {
   }
 
   private async reapIdle() {
-    const idleMs = env.int("PENPOTOS_MCP_IDLE_CLOSE_SECONDS", 900) * 1000;
+    const idleMs = env.int("PENPOTOS_MCP_IDLE_CLOSE_SECONDS", 120) * 1000;
     for (const s of [...this.sessions.values()]) {
       if (Date.now() - s.lastUsed > idleMs) {
         log.info(`closing idle file ${s.fileId}`);

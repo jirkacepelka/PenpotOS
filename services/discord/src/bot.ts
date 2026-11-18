@@ -193,7 +193,7 @@ export class PenpotDiscordBot {
         `Kontext: komunikuješ přes Discord s uživatelem ${message.member?.displayName ?? message.author.username}. ` +
         `Odpověď piš jako Discord zprávu (Markdown, max. pár odstavců). ` +
         `Pro náhled výsledku použij nástroj export_shape – exportované obrázky se automaticky přiloží ke zprávě ` +
-        `(hotovou grafiku exportuj se scale: 2, ať je ostrá; download nepotřebuješ). ` +
+        `(hotovou grafiku exportuj s download: true a scale: 2 – přiloží se v plném rozlišení; náhledy pro kontrolu bez download). ` +
         `Přiložené obrázky od uživatele vlož do návrhu nástrojem import_image s jejich URL – request_image_upload na Discordu nepoužívej. ` +
         `Pokud zpráva jen o něčem diskutuje nebo se ptá, odpověz (případně navrhni grafiku) a nic nevytvářej, dokud o to uživatel nepožádá.` +
         (imageUrls.length ? `\nURL přiložených obrázků: ${imageUrls.join(" ")}` : "") +
@@ -215,7 +215,11 @@ export class PenpotDiscordBot {
       });
 
       const chunks = splitMessage(result.text);
-      const files = result.images.slice(-10).map((img) => new AttachmentBuilder(img.data, { name: img.name }));
+      // Finished graphics (export_shape with download) in full resolution; otherwise the previews.
+      const finals = await fetchDownloads(result.downloads ?? []);
+      const files = (finals.length ? finals : result.images.slice(-10).map((img) => ({ data: img.data, name: img.name }))).map(
+        (f) => new AttachmentBuilder(f.data, { name: f.name }),
+      );
       await status.edit(`✅ Hotovo za ${Math.round((Date.now() - started) / 1000)} s${steps.length ? ` · _${steps.slice(-4).join(" → ")}_` : ""}`).catch(() => {});
       for (let i = 0; i < chunks.length; i++) {
         const last = i === chunks.length - 1;
@@ -232,4 +236,20 @@ export class PenpotDiscordBot {
       this.active--;
     }
   }
+}
+
+/** Fetches finished graphics from the MCP service (internal network) by their public download links. */
+async function fetchDownloads(links: string[]): Promise<{ data: Buffer; name: string }[]> {
+  const out: { data: Buffer; name: string }[] = [];
+  for (const link of [...new Set(links)].slice(-10)) {
+    try {
+      const path = new URL(link).pathname;
+      const res = await fetch(`${env.mcpInternalUrl}${path}`, { signal: AbortSignal.timeout(30_000) });
+      if (!res.ok) continue;
+      out.push({ data: Buffer.from(await res.arrayBuffer()), name: decodeURIComponent(path.split("/").pop() || "grafika.png") });
+    } catch (err: any) {
+      log.warn(`download ${link} failed: ${err.message}`);
+    }
+  }
+  return out;
 }

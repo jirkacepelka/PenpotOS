@@ -15,6 +15,8 @@ export interface TaskResult {
   text: string;
   /** Images produced by tools (e.g. export_shape) to post as attachments. */
   images: { data: Buffer; mimeType: string; name: string }[];
+  /** Download links of finished graphics (export_shape with download: true), attached in full resolution. */
+  downloads?: string[];
   /** Provider-specific conversation state to persist for follow-ups. */
   state: unknown;
 }
@@ -58,4 +60,9 @@ export function toolLabel(name: string) {
 
 export function extFor(mime: string) {
   return mime === "image/jpeg" ? "jpg" : mime === "image/gif" ? "gif" : mime === "image/webp" ? "webp" : "png";
+}
+
+/** Finds PenpotOS download links (export_shape with download: true) in a tool result text. */
+export function extractDownloadLinks(text: string | undefined): string[] {
+  return [...(text ?? "").matchAll(/https?:\/\/[^\s)]+\/mcp\/files\/d\/[\w-]+\/[^\s)]+/g)].map((m) => m[0]);
 }

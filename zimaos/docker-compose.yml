@@ -66,6 +66,8 @@ services:
     environment:
       PENPOT_FLAGS: disable-registration enable-login-with-password enable-prepl-server disable-email-verification enable-access-tokens disable-onboarding disable-secure-session-cookies
       PENPOT_PREPL_HOST: 0.0.0.0
+      # Java bere jinak čtvrtinu RAM serveru; 1 GB stačí a nevyužitou paměť vrací systému.
+      JAVA_OPTS: "-Xms256m -Xmx1g -XX:+UseG1GC -XX:G1PeriodicGCInterval=60000 -XX:MinHeapFreeRatio=10 -XX:MaxHeapFreeRatio=30"
       PENPOT_DATABASE_URI: postgresql://penpot-postgres/penpot
       PENPOT_DATABASE_USERNAME: penpot
       PENPOT_REDIS_URI: redis://penpot-valkey/0
