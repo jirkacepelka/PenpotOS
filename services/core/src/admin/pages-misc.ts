@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { audit, env, listActiveTokens, listProfiles, listTeams, recentAudit } from "@penpotos/shared";
+import { audit, env, getSettings, listActiveTokens, listProfiles, listTeams, recentAudit, setProfileRenderer, updateSettings } from "@penpotos/shared";
 import { savePublicUrl, suggestedPublicUrl } from "./setup.ts";
 import { allStatuses } from "../status.ts";
 import { getLastSyncReport } from "../sync.ts";
@@ -67,6 +67,7 @@ miscRouter.get("/", async (req, res) => {
   const [profiles, teams, tokens, st] = await Promise.all([listProfiles(), listTeams(), listActiveTokens(), allStatuses()]);
   const report = getLastSyncReport();
   const members = profiles.filter((p) => !p.isService);
+  const renderer = (await getSettings()).general.defaultRenderer;
   const body = html`
     <h1>Přehled</h1>
     <div class="grid">
@@ -96,8 +97,36 @@ miscRouter.get("/", async (req, res) => {
           ${env.publicUrlConfigured ? "" : html`<p class="flash info">Adresa zatím není uložená – zkontroluj návrh a ulož ho.</p>`}
           <p class="hint">Penpot funguje na jakékoli adrese serveru (LAN IP i doména z tunelu). Tato adresa se používá v odkazech (e-maily, odkazy od AI) a pro připojení Claude. Po změně restartuj jednou aplikaci v ZimaOS.</p>`}
       <p>MCP connector pro Claude: <code>${env.publicUrl}/mcp</code> ${env.publicUrl.startsWith("https://") ? "" : html`<span class="badge err">Claude vyžaduje HTTPS (Cloudflare Tunnel)</span>`}</p>
+    </div>
+    <div class="card">
+      <h2>Vykreslování v editoru</h2>
+      <form method="post" action="/renderer" class="row">
+        ${csrfField(req.admin!.csrf)}
+        <div><label>Výchozí renderer pro členy</label>
+          <select name="renderer">
+            <option value="wasm" ${renderer === "wasm" ? "selected" : ""}>Nový – GPU (WebGL), rychlejší u složitých návrhů</option>
+            <option value="svg" ${renderer === "svg" ? "selected" : ""}>Klasický – SVG</option>
+          </select></div>
+        <div class="shrink"><button class="primary" name="apply" value="new">Uložit pro nové členy</button></div>
+        <div class="shrink"><button name="apply" value="all">Uložit a nastavit všem</button></div>
+      </form>
+      <p class="hint">Nový renderer vykresluje plátno přes grafickou kartu, takže u velkých souborů méně zatěžuje procesor. Je to novinka Penpotu – každý si ho může sám přepnout v Penpotu (Nastavení → Možnosti, nebo v menu editoru). „Nastavit všem“ přepíše volbu všech členů; projeví se po obnovení stránky. Účet AI zůstává na klasickém rendereru (server nemá GPU).</p>
     </div>`;
   res.send(layout({ title: "Přehled", active: "/", user: req.admin, csrf: req.admin!.csrf, flash: takeFlash(req, res) }, body));
+});
+
+miscRouter.post("/renderer", async (req, res) => {
+  const renderer = req.body.renderer === "svg" ? "svg" : "wasm";
+  await updateSettings("general", { defaultRenderer: renderer });
+  let msg = "Výchozí renderer pro nové členy uložen.";
+  if (req.body.apply === "all") {
+    const ids = (await listProfiles()).filter((p) => !p.isService && p.email.toLowerCase() !== env.botEmail.toLowerCase()).map((p) => p.id);
+    const n = await setProfileRenderer(ids, renderer);
+    msg = `Renderer nastaven ${n} členům. Projeví se po obnovení stránky v Penpotu.`;
+  }
+  await audit({ source: "admin", actor: req.admin!.email, action: "settings.renderer", detail: { renderer, apply: req.body.apply } });
+  setFlash(res, "ok", msg);
+  res.redirect("/");
 });
 
 miscRouter.post("/public-url", async (req, res) => {

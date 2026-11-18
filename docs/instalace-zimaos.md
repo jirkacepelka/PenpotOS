@@ -48,6 +48,12 @@ MCP connector v Claude vyžaduje veřejnou HTTPS adresu. Cloudflare Tunnel ji d�
 
 Týmy zakládají členové normálně v Penpotu; PenpotOS do nich do pár minut (interval v *Týmy*) přidá všechny členy a AI účet a vytvoří brand knihovnu. Tlačítko *Synchronizovat teď* to udělá hned.
 
+## Rychlost editoru (GPU renderer)
+
+Penpot má nový renderer, který kreslí plátno přes grafickou kartu (WebGL), takže u složitých návrhů méně zatěžuje procesor. V adminu (*Přehled → Vykreslování v editoru*) nastavíš výchozí renderer pro nové členy a tlačítkem *Uložit a nastavit všem* ho přepneš všem stávajícím. Každý si ho může změnit i sám v Penpotu (Nastavení → Možnosti, nebo v menu editoru). Účet AI zůstává na klasickém rendereru, protože server nemá GPU.
+
+Na noteboocích pomáhá i režim napájení *Nejlepší výkon*, vypnutý *Šetřič energie* v prohlížeči a zapnutá hardwarová akcelerace.
+
 ## Aktualizace
 
 ```bash

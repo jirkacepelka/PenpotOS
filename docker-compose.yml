@@ -114,7 +114,7 @@ services:
     environment:
       <<: *penpot-common
       # Registration UI hidden; accounts are created in the PenpotOS admin dashboard.
-      PENPOT_FLAGS: disable-registration enable-login-with-password disable-onboarding enable-plugins ${PENPOT_EXTRA_FLAGS:-}
+      PENPOT_FLAGS: disable-registration enable-login-with-password disable-onboarding enable-plugins enable-render-switch ${PENPOT_EXTRA_FLAGS:-}
       # Only reached internally over IPv4 (through penpotos-core); IPv6 listen fails on hosts without IPv6.
       PENPOT_IPV6_LISTEN_DIRECTIVE: "#"
 
