@@ -27,6 +27,8 @@ export const settingsSchema = z.object({
       organizationName: z.string().default("Libertariánská strana Voluntia"),
       /** Block creating public share links (view-only links accessible without an account). */
       blockShareLinks: z.boolean().default(false),
+      /** Canvas renderer for members: "wasm" = new GPU (WebGL) renderer, "svg" = classic. Members can switch in Penpot. */
+      defaultRenderer: z.enum(["wasm", "svg"]).default("wasm"),
     })
     .prefault({}),
   membership: z

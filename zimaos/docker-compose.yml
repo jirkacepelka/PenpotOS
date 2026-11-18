@@ -51,7 +51,7 @@ services:
     volumes: [assets:/opt/data/assets]
     depends_on: [penpot-backend, penpot-exporter]
     environment:
-      PENPOT_FLAGS: disable-registration enable-login-with-password disable-onboarding enable-plugins
+      PENPOT_FLAGS: disable-registration enable-login-with-password disable-onboarding enable-plugins enable-render-switch
       PENPOT_IPV6_LISTEN_DIRECTIVE: "#"
       PENPOT_HTTP_SERVER_MAX_BODY_SIZE: "367001600"
       PENPOT_HTTP_SERVER_MAX_MULTIPART_BODY_SIZE: "367001600"

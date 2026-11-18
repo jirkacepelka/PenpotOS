@@ -63,6 +63,20 @@ export async function setProfileBlocked(id: string, blocked: boolean): Promise<v
   }
 }
 
+/**
+ * Sets the editor renderer preference ("wasm" = GPU/WebGL, "svg" = classic) in profile props.
+ * Props are stored as transit JSON; this is what Penpot's own settings switch writes.
+ */
+export async function setProfileRenderer(profileIds: string[], renderer: "wasm" | "svg"): Promise<number> {
+  if (!profileIds.length) return 0;
+  const rows = await query(
+    `UPDATE profile SET props = coalesce(props, '{}'::jsonb) || jsonb_build_object('~:renderer', $2::text)
+      WHERE id = ANY($1::uuid[]) RETURNING id`,
+    [profileIds, `~:${renderer}`],
+  );
+  return rows.length;
+}
+
 export async function listTeams(): Promise<TeamRow[]> {
   return query<TeamRow>(`
     SELECT t.id, t.name, t.is_default AS "isDefault", t.created_at AS "createdAt",

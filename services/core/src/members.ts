@@ -14,6 +14,7 @@ import {
   query,
   revokeProfileTokens,
   setProfileBlocked,
+  setProfileRenderer,
   setSecret,
   upsertMember,
 } from "@penpotos/shared";
@@ -52,6 +53,7 @@ export async function createMember(input: NewMember, actor: string): Promise<{ p
     note: input.note,
   });
 
+  await setProfileRenderer([profile.id], settings.general.defaultRenderer).catch((err) => log.warn(`could not set renderer for ${email}`, err));
   if (settings.onboarding.skipTutorial) {
     await markTutorialSeen(email, password).catch((err) => log.warn(`could not update props for ${email}`, err));
   }
