@@ -136,6 +136,8 @@ services:
       # prepl-server: account management API used by PenpotOS (reachable only inside this network)
       PENPOT_FLAGS: disable-registration enable-login-with-password enable-prepl-server disable-email-verification enable-access-tokens disable-onboarding ${PENPOT_SESSION_COOKIE_FLAG:-disable-secure-session-cookies} ${PENPOT_EXTRA_FLAGS:-}
       PENPOT_PREPL_HOST: 0.0.0.0
+      # Without a limit the JVM takes a quarter of the host's RAM; 1 GB is plenty and idle memory is returned.
+      JAVA_OPTS: ${PENPOT_JAVA_OPTS:--Xms256m -Xmx1g -XX:+UseG1GC -XX:G1PeriodicGCInterval=60000 -XX:MinHeapFreeRatio=10 -XX:MaxHeapFreeRatio=30}
       PENPOT_PUBLIC_URI: ${PENPOTOS_PUBLIC_URL:-}
       PENPOT_REDIS_URI: redis://penpot-valkey/0
       PENPOT_OBJECTS_STORAGE_BACKEND: fs

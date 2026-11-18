@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { createLogger, env } from "@penpotos/shared";
 import { internalHeaders, mcpUrl } from "../mcp-client.ts";
-import { extFor, toolLabel, type Provider, type RunOptions, type TaskResult } from "./types.ts";
+import { extFor, extractDownloadLinks, toolLabel, type Provider, type RunOptions, type TaskResult } from "./types.ts";
 
 const log = createLogger("claude-subscription");
 
@@ -62,6 +62,7 @@ export class ClaudeSubscriptionProvider implements Provider {
 
     const toolNames = new Map<string, string>();
     const images: TaskResult["images"] = [];
+    const downloads: string[] = [];
     let lastText = "";
     let resultText = "";
     let sessionId = prev?.sessionId ?? "";
@@ -84,6 +85,7 @@ export class ClaudeSubscriptionProvider implements Provider {
             if (b.type !== "tool_result" || !Array.isArray(b.content)) continue;
             if (!toolNames.get(b.tool_use_id)?.endsWith("export_shape")) continue;
             for (const c of b.content) {
+              if (c.type === "text") downloads.push(...extractDownloadLinks(c.text));
               if (c.type === "image" && c.source?.type === "base64") {
                 images.push({ data: Buffer.from(c.source.data, "base64"), mimeType: c.source.media_type, name: `nahled-${images.length + 1}.${extFor(c.source.media_type)}` });
               }
@@ -106,6 +108,6 @@ export class ClaudeSubscriptionProvider implements Provider {
       await consume(run(undefined));
     }
     const state: SubscriptionState = { provider: "claude-subscription", sessionId };
-    return { text: resultText || lastText || "Hotovo.", images, state };
+    return { text: resultText || lastText || "Hotovo.", images, downloads, state };
   }
 }

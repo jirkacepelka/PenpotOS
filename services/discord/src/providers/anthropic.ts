@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createLogger } from "@penpotos/shared";
 import { PenpotMcp } from "../mcp-client.ts";
-import { extFor, toolLabel, type Provider, type RunOptions, type TaskResult } from "./types.ts";
+import { extFor, extractDownloadLinks, toolLabel, type Provider, type RunOptions, type TaskResult } from "./types.ts";
 
 const log = createLogger("anthropic");
 
@@ -39,6 +39,7 @@ export class AnthropicProvider implements Provider {
       messages.push({ role: "user", content: userContent });
 
       const images: TaskResult["images"] = [];
+      const downloads: string[] = [];
       const model = settings.llm.model;
       const useFallback = FALLBACK_MODELS.has(model);
       const isHaiku = model.startsWith("claude-haiku");
@@ -49,6 +50,8 @@ export class AnthropicProvider implements Provider {
           model,
           max_tokens: 64000,
           system: [{ type: "text", text: opts.systemPrompt, cache_control: { type: "ephemeral" } }],
+          // Each step resends the whole history (tool results, previews); cache it so only the new part is paid in full.
+          cache_control: { type: "ephemeral" },
           tools,
           messages,
           ...(isHaiku ? {} : { thinking: { type: "adaptive" }, output_config: { effort: settings.llm.effort } }),
@@ -85,6 +88,7 @@ export class AnthropicProvider implements Provider {
             opts.onProgress({ kind: "tool", message: toolLabel(tu.name) });
             try {
               const out = await mcp.call(tu.name, (tu.input ?? {}) as Record<string, unknown>);
+              if (tu.name === "export_shape") downloads.push(...extractDownloadLinks(out.text));
               const content: Anthropic.Beta.BetaToolResultBlockParam["content"] = [];
               if (out.text) content.push({ type: "text", text: out.text });
               for (const img of out.images) {
@@ -109,7 +113,7 @@ export class AnthropicProvider implements Provider {
       }
       // History stays append-only (editing earlier turns would invalidate preserved thinking blocks).
       const state: AnthropicState = { provider: "anthropic", messages };
-      return { text: finalText || "Hotovo.", images, state };
+      return { text: finalText || "Hotovo.", images, downloads, state };
     } finally {
       await mcp.close();
     }

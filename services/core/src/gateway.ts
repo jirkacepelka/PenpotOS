@@ -71,7 +71,9 @@ export function isMcpPath(url: string): boolean {
 export function startGateway(port: number) {
   const penpotTarget = env.penpotInternalUrl;
   const mcpTarget = env.mcpInternalUrl;
-  const proxy = createProxyServer({ xfwd: true, ws: true, proxyTimeout: 15 * 60_000, timeout: 15 * 60_000 });
+  // Keep-alive connections to Penpot/MCP: no new TCP handshake for each of the many asset and API requests.
+  const agent = new http.Agent({ keepAlive: true, maxSockets: 256, keepAliveMsecs: 30_000 });
+  const proxy = createProxyServer({ xfwd: true, ws: true, agent, proxyTimeout: 15 * 60_000, timeout: 15 * 60_000 });
 
   proxy.on("error", (err: Error, _req: any, res: any) => {
     log.warn(`proxy error: ${err.message}`);

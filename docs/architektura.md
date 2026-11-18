@@ -78,6 +78,7 @@ PENPOTOS_MCP_URL=http://localhost:4400/mcp node --import tsx scripts/smoke-mcp.t
 | `PENPOTOS_MCP_INTERNAL_URL` | `http://penpotos-mcp:4400` | core, discord |
 | `PENPOTOS_BOT_EMAIL`, `PENPOTOS_BOT_NAME` | `ai@penpotos.local`, `Voluntia AI` | core, mcp |
 | `PENPOTOS_BOT_RENDERER` | `svg` | core (renderer servisního účtu – headless bez GPU) |
-| `PENPOTOS_MCP_IDLE_CLOSE_SECONDS` | `900` | mcp |
+| `PENPOTOS_MCP_IDLE_CLOSE_SECONDS` | `120` | mcp (nečinný soubor v headless prohlížeči se zavře – otevřený bere CPU) |
+| `PENPOT_JAVA_OPTS` | `-Xms256m -Xmx1g …` | backend (velikost haldy Javy; varianta s `.env`) |
 | `CHROMIUM_EXECUTABLE_PATH` | (Playwright) | mcp |
 | `PENPOTOS_DISCORD_MAX_TASKS` | `3` | discord |

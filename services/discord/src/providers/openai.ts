@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { createLogger } from "@penpotos/shared";
 import { PenpotMcp } from "../mcp-client.ts";
-import { extFor, toolLabel, type Provider, type RunOptions, type TaskResult } from "./types.ts";
+import { extFor, extractDownloadLinks, toolLabel, type Provider, type RunOptions, type TaskResult } from "./types.ts";
 
 const log = createLogger("openai-compatible");
 
@@ -28,6 +28,7 @@ export class OpenAICompatibleProvider implements Provider {
       messages.push({ role: "user", content: userParts });
 
       const images: TaskResult["images"] = [];
+      const downloads: string[] = [];
       let finalText = "";
       for (let turn = 0; turn < settings.llm.maxTurns; turn++) {
         const res = await client.chat.completions.create({ model: settings.llm.openaiModel, messages, tools }, { signal: opts.signal });
@@ -46,6 +47,7 @@ export class OpenAICompatibleProvider implements Provider {
           try {
             const args = call.function.arguments ? JSON.parse(call.function.arguments) : {};
             const out = await mcp.call(call.function.name, args);
+            if (call.function.name === "export_shape") downloads.push(...extractDownloadLinks(out.text));
             content = (out.isError ? "ERROR: " : "") + (out.text || (out.images.length ? "(image attached below)" : "(no output)"));
             for (const img of out.images) {
               followUpImages.push({ type: "image_url", image_url: { url: `data:${img.mimeType};base64,${img.data}` } });
@@ -62,7 +64,7 @@ export class OpenAICompatibleProvider implements Provider {
         // Tool messages cannot carry images in the chat-completions format; show them in a user message.
         if (followUpImages.length) messages.push({ role: "user", content: [{ type: "text", text: "Exported images:" }, ...followUpImages] });
       }
-      return { text: finalText || "Hotovo.", images, state: { provider: "openai-compatible", messages } satisfies OpenAIState };
+      return { text: finalText || "Hotovo.", images, downloads, state: { provider: "openai-compatible", messages } satisfies OpenAIState };
     } finally {
       await mcp.close();
     }
